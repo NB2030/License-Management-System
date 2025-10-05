@@ -208,7 +208,7 @@ async function signIn(email: string, password: string) {
             </h2>
 
             <p className="text-gray-700 mb-4">
-              بعد تسجيل الدخول أو التسجيل، استخدم هذه الدالة لتفعيل الترخيص:
+              بعد تسجيل الدخول، استخدم Edge Function لتفعيل الترخيص:
             </p>
 
             <div className="relative">
@@ -216,40 +216,32 @@ async function signIn(email: string, password: string) {
                 <button
                   onClick={() =>
                     copyToClipboard(
-                      `async function activateLicense(licenseKey: string, userId: string) {
-  const { data: license } = await supabase
-    .from('licenses')
-    .select('*')
-    .eq('license_key', licenseKey)
-    .eq('is_active', true)
-    .maybeSingle();
+                      `async function activateLicense(licenseKey: string) {
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!license) {
-    return { success: false, message: 'رمز الترخيص غير صالح' };
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
   }
 
-  if (license.current_activations >= license.max_activations) {
-    return { success: false, message: 'تم الوصول للحد الأقصى من التفعيلات' };
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/activate-license',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+      body: JSON.stringify({ licenseKey }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message);
   }
 
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + license.duration_days);
-
-  const { error } = await supabase.from('user_licenses').insert({
-    user_id: userId,
-    license_id: license.id,
-    expires_at: expiresAt.toISOString(),
-    is_active: true,
-  });
-
-  if (error) throw error;
-
-  await supabase
-    .from('licenses')
-    .update({ current_activations: license.current_activations + 1 })
-    .eq('id', license.id);
-
-  return { success: true, message: 'تم تفعيل الترخيص بنجاح', expiresAt };
+  return data;
 }`,
                       'activate'
                     )
@@ -263,43 +255,41 @@ async function signIn(email: string, password: string) {
                   )}
                 </button>
                 <pre className="text-sm">
-                  <code>{`async function activateLicense(licenseKey: string, userId: string) {
-  const { data: license } = await supabase
-    .from('licenses')
-    .select('*')
-    .eq('license_key', licenseKey)
-    .eq('is_active', true)
-    .maybeSingle();
+                  <code>{`async function activateLicense(licenseKey: string) {
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!license) {
-    return { success: false, message: 'رمز الترخيص غير صالح' };
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
   }
 
-  if (license.current_activations >= license.max_activations) {
-    return { success: false, message: 'تم الوصول للحد الأقصى من التفعيلات' };
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/activate-license',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+      body: JSON.stringify({ licenseKey }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message);
   }
 
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + license.duration_days);
-
-  const { error } = await supabase.from('user_licenses').insert({
-    user_id: userId,
-    license_id: license.id,
-    expires_at: expiresAt.toISOString(),
-    is_active: true,
-  });
-
-  if (error) throw error;
-
-  await supabase
-    .from('licenses')
-    .update({ current_activations: license.current_activations + 1 })
-    .eq('id', license.id);
-
-  return { success: true, message: 'تم تفعيل الترخيص بنجاح', expiresAt };
+  return data;
 }`}</code>
                 </pre>
               </div>
+            </div>
+
+            <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <p className="text-sm text-blue-800">
+                <strong>ملاحظة:</strong> يتطلب هذا Edge Function توكن المصادقة في الـ Authorization header
+              </p>
             </div>
           </section>
 
@@ -309,7 +299,7 @@ async function signIn(email: string, password: string) {
             </h2>
 
             <p className="text-gray-700 mb-4">
-              استخدم هذه الدالة للتحقق من أن المستخدم لديه ترخيص نشط:
+              استخدم Edge Function للتحقق من أن المستخدم لديه ترخيص نشط:
             </p>
 
             <div className="relative">
@@ -317,30 +307,34 @@ async function signIn(email: string, password: string) {
                 <button
                   onClick={() =>
                     copyToClipboard(
-                      `async function checkUserLicense(userId: string) {
-  const { data } = await supabase
-    .from('user_licenses')
-    .select('*, licenses(*)')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('expires_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+                      `async function checkUserLicense() {
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!data) return { isValid: false };
-
-  const now = new Date();
-  const expiresAt = new Date(data.expires_at);
-
-  if (expiresAt < now) {
-    await supabase
-      .from('user_licenses')
-      .update({ is_active: false })
-      .eq('id', data.id);
-    return { isValid: false };
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
   }
 
-  return { isValid: true, expiresAt: data.expires_at };
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/validate-license',
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.isValid) {
+    return { isValid: false, message: data.message };
+  }
+
+  return {
+    isValid: true,
+    expiresAt: data.expiresAt,
+    license: data.license
+  };
 }`,
                       'check'
                     )
@@ -354,30 +348,34 @@ async function signIn(email: string, password: string) {
                   )}
                 </button>
                 <pre className="text-sm">
-                  <code>{`async function checkUserLicense(userId: string) {
-  const { data } = await supabase
-    .from('user_licenses')
-    .select('*, licenses(*)')
-    .eq('user_id', userId)
-    .eq('is_active', true)
-    .order('expires_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+                  <code>{`async function checkUserLicense() {
+  const { data: { session } } = await supabase.auth.getSession();
 
-  if (!data) return { isValid: false };
-
-  const now = new Date();
-  const expiresAt = new Date(data.expires_at);
-
-  if (expiresAt < now) {
-    await supabase
-      .from('user_licenses')
-      .update({ is_active: false })
-      .eq('id', data.id);
-    return { isValid: false };
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
   }
 
-  return { isValid: true, expiresAt: data.expires_at };
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/validate-license',
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.isValid) {
+    return { isValid: false, message: data.message };
+  }
+
+  return {
+    isValid: true,
+    expiresAt: data.expiresAt,
+    license: data.license
+  };
 }`}</code>
                 </pre>
               </div>
@@ -464,24 +462,52 @@ function checkOfflineLicense() {
           <section className="bg-white rounded-xl shadow-sm p-6">
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Edge Functions API</h2>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">1. تفعيل الترخيص</h3>
                 <div className="bg-gray-100 p-3 rounded-lg mb-2">
                   <code className="text-sm">POST {supabaseUrl}/functions/v1/activate-license</code>
                 </div>
+                <p className="text-sm text-gray-600 mb-2">Headers:</p>
+                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm mb-2">
+                  <pre>{`Authorization: Bearer <access_token>
+Content-Type: application/json`}</pre>
+                </div>
                 <p className="text-sm text-gray-600 mb-2">Body:</p>
-                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm">
+                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm mb-2">
                   <pre>{`{
   "licenseKey": "XXXXX-XXXXX-XXXXX-XXXXX"
+}`}</pre>
+                </div>
+                <p className="text-sm text-gray-600 mb-2">Response:</p>
+                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm">
+                  <pre>{`{
+  "success": true,
+  "message": "License activated successfully",
+  "expiresAt": "2024-11-05T12:00:00.000Z"
 }`}</pre>
                 </div>
               </div>
 
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-2">2. التحقق من الترخيص</h3>
-                <div className="bg-gray-100 p-3 rounded-lg">
+                <div className="bg-gray-100 p-3 rounded-lg mb-2">
                   <code className="text-sm">GET {supabaseUrl}/functions/v1/validate-license</code>
+                </div>
+                <p className="text-sm text-gray-600 mb-2">Headers:</p>
+                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm mb-2">
+                  <pre>{`Authorization: Bearer <access_token>`}</pre>
+                </div>
+                <p className="text-sm text-gray-600 mb-2">Response:</p>
+                <div className="bg-gray-900 text-gray-100 p-3 rounded-lg text-sm">
+                  <pre>{`{
+  "isValid": true,
+  "expiresAt": "2024-11-05T12:00:00.000Z",
+  "license": {
+    "license_key": "XXXXX-XXXXX-XXXXX-XXXXX",
+    "duration_days": 30
+  }
+}`}</pre>
                 </div>
               </div>
             </div>
@@ -494,7 +520,7 @@ function checkOfflineLicense() {
                 <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
                   1
                 </div>
-                <p className="text-gray-700">المستخدم يقوم بالتسجيل أو تسجيل الدخول</p>
+                <p className="text-gray-700">المستخدم يقوم بالتسجيل أو تسجيل الدخول (Supabase Auth)</p>
               </div>
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
@@ -506,7 +532,7 @@ function checkOfflineLicense() {
                 <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
                   3
                 </div>
-                <p className="text-gray-700">النظام يتحقق من صلاحية الترخيص ويفعله</p>
+                <p className="text-gray-700">استدعاء activate-license Edge Function بالتوكن</p>
               </div>
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
@@ -518,7 +544,13 @@ function checkOfflineLicense() {
                 <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
                   5
                 </div>
-                <p className="text-gray-700">المستخدم يمكنه الوصول للتطبيق حتى بدون إنترنت</p>
+                <p className="text-gray-700">التحقق الدوري باستخدام validate-license Edge Function</p>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 bg-green-500 text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold">
+                  6
+                </div>
+                <p className="text-gray-700">المستخدم يمكنه الوصول للتطبيق حتى بدون إنترنت (من الكاش)</p>
               </div>
             </div>
           </section>
