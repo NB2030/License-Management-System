@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Code, Key, User, Copy, CheckCircle } from 'lucide-react';
+import ExportButton from './ExportButton';
 
 export default function ApiDocumentation() {
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -12,8 +13,247 @@ export default function ApiDocumentation() {
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
+  const setupCode = `
+// lib/supabase.ts
+import { createClient } from '@supabase/supabase-js';
+
+const supabaseUrl = '${supabaseUrl}';
+const supabaseAnonKey = 'YOUR_ANON_KEY';
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+  `.trim();
+
+  const signUpCode = `
+// التسجيل
+async function signUp(email: string, password: string, fullName: string) {
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+  });
+
+  if (authError) throw authError;
+
+  const { error: profileError } = await supabase.from('profiles').insert({
+    id: authData.user.id,
+    email,
+    full_name: fullName,
+  });
+
+  if (profileError) throw profileError;
+  return authData.user;
+}
+  `.trim();
+
+  const signInCode = `
+// تسجيل الدخول
+async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) throw error;
+  return data.user;
+}
+  `.trim();
+
+  const activateLicenseCode = `
+async function activateLicense(licenseKey: string) {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
+  }
+
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/activate-license',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+      body: JSON.stringify({ licenseKey }),
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.success) {
+    throw new Error(data.message);
+  }
+
+  return data;
+}
+  `.trim();
+
+  const checkUserLicenseCode = `
+async function checkUserLicense() {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error('يجب تسجيل الدخول أولاً');
+  }
+
+  const response = await fetch(
+    '${supabaseUrl}/functions/v1/validate-license',
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': \`Bearer \${session.access_token}\`,
+      },
+    }
+  );
+
+  const data = await response.json();
+
+  if (!data.isValid) {
+    return { isValid: false, message: data.message };
+  }
+
+  return {
+    isValid: true,
+    expiresAt: data.expiresAt,
+    license: data.license
+  };
+}
+  `.trim();
+
+  const offlineLicenseCode = `
+const OFFLINE_LICENSE_KEY = 'app_license_offline';
+
+function saveOfflineLicense(data) {
+  localStorage.setItem(OFFLINE_LICENSE_KEY, JSON.stringify({
+    userId: data.userId,
+    email: data.email,
+    fullName: data.fullName,
+    licenseKey: data.licenseKey,
+    expiresAt: data.expiresAt,
+    lastValidated: new Date().toISOString(),
+  }));
+}
+
+function checkOfflineLicense() {
+  const data = localStorage.getItem(OFFLINE_LICENSE_KEY);
+  if (!data) return false;
+
+  const license = JSON.parse(data);
+  const now = new Date();
+  const expiresAt = new Date(license.expiresAt);
+
+  return expiresAt > now;
+}
+  `.trim();
+
+  const markdownContent = `
+# توثيق API نظام التراخيص
+
+## نظرة عامة على النظام
+نظام التراخيص هذا يوفر حلاً متكاملاً لإدارة التراخيص والاشتراكات في تطبيقاتك. يدعم النظام:
+- إنشاء وإدارة تراخيص بمدد محددة
+- تفعيل التراخيص للمستخدمين
+- التحقق من صلاحية التراخيص
+- دعم الوصول غير المتصل بالإنترنت
+- لوحة تحكم للمشرفين
+
+---
+
+## المرحلة 1: إعداد Supabase Client
+قم بإنشاء ملف لإعداد Supabase في تطبيقك:
+\`\`\`typescript
+${setupCode}
+\`\`\`
+**ملاحظة:** استبدل YOUR_ANON_KEY بمفتاح API الخاص بك من لوحة تحكم Supabase.
+
+---
+
+## المرحلة 2: إنشاء نظام التسجيل والدخول
+
+### 1. التسجيل (Sign Up)
+\`\`\`typescript
+${signUpCode}
+\`\`\`
+
+### 2. تسجيل الدخول (Sign In)
+\`\`\`typescript
+${signInCode}
+\`\`\`
+
+---
+
+## المرحلة 3: تفعيل الترخيص
+بعد تسجيل الدخول، استخدم Edge Function لتفعيل الترخيص:
+\`\`\`typescript
+${activateLicenseCode}
+\`\`\`
+**ملاحظة:** يتطلب هذا Edge Function توكن المصادقة في الـ Authorization header.
+
+---
+
+## المرحلة 4: التحقق من صلاحية الترخيص
+استخدم Edge Function للتحقق من أن المستخدم لديه ترخيص نشط:
+\`\`\`typescript
+${checkUserLicenseCode}
+\`\`\`
+
+---
+
+## المرحلة 5: دعم الوصول غير المتصل
+لدعم الوصول غير المتصل، احفظ بيانات الترخيص في localStorage:
+\`\`\`javascript
+${offlineLicenseCode}
+\`\`\`
+
+---
+
+## Edge Functions API
+
+### 1. تفعيل الترخيص
+- **Endpoint:** \`POST ${supabaseUrl}/functions/v1/activate-license\`
+- **Headers:**
+  \`\`\`
+  Authorization: Bearer <access_token>
+  Content-Type: application/json
+  \`\`\`
+- **Body:**
+  \`\`\`json
+  {
+    "licenseKey": "XXXXX-XXXXX-XXXXX-XXXXX"
+  }
+  \`\`\`
+- **Response:**
+  \`\`\`json
+  {
+    "success": true,
+    "message": "License activated successfully",
+    "expiresAt": "2024-11-05T12:00:00.000Z"
+  }
+  \`\`\`
+
+### 2. التحقق من الترخيص
+- **Endpoint:** \`GET ${supabaseUrl}/functions/v1/validate-license\`
+- **Headers:**
+  \`\`\`
+  Authorization: Bearer <access_token>
+  \`\`\`
+- **Response:**
+  \`\`\`json
+  {
+    "isValid": true,
+    "expiresAt": "2024-11-05T12:00:00.000Z",
+    "daysLeft": 25,
+    "license": {
+      "key": "XXXXX-XXXXX-XXXXX-XXXXX",
+      "durationDays": 30
+    }
+  }
+  \`\`\`
+  `.trim();
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      <ExportButton content={markdownContent} filename="api-documentation.md" />
+
       <section className="bg-white rounded-xl shadow-sm p-6">
         <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
           <Code className="w-6 h-6 text-blue-600" />
@@ -46,12 +286,7 @@ export default function ApiDocumentation() {
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `import { createClient } from '@supabase/supabase-js';\n\nconst supabaseUrl = '${supabaseUrl}';\nconst supabaseAnonKey = 'YOUR_ANON_KEY';\n\nexport const supabase = createClient(supabaseUrl, supabaseAnonKey);`,
-                  'setup'
-                )
-              }
+              onClick={() => copyToClipboard(setupCode, 'setup')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'setup' ? (
@@ -61,13 +296,7 @@ export default function ApiDocumentation() {
               )}
             </button>
             <pre className="text-sm">
-              <code>{`// lib/supabase.ts
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = '${supabaseUrl}';
-const supabaseAnonKey = 'YOUR_ANON_KEY';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);`}</code>
+              <code>{setupCode}</code>
             </pre>
           </div>
         </div>
@@ -89,12 +318,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);`}</code>
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `async function signUp(email: string, password: string, fullName: string) {\n  const { data: authData, error: authError } = await supabase.auth.signUp({\n    email,\n    password,\n  });\n\n  if (authError) throw authError;\n\n  const { error: profileError } = await supabase.from('profiles').insert({\n    id: authData.user.id,\n    email,\n    full_name: fullName,\n  });\n\n  if (profileError) throw profileError;\n  return authData.user;\n}`,
-                  'signup'
-                )
-              }
+              onClick={() => copyToClipboard(signUpCode, 'signup')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'signup' ? (
@@ -104,24 +328,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);`}</code>
               )}
             </button>
             <pre className="text-sm">
-              <code>{`// التسجيل
-async function signUp(email: string, password: string, fullName: string) {
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-
-  if (authError) throw authError;
-
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: authData.user.id,
-    email,
-    full_name: fullName,
-  });
-
-  if (profileError) throw profileError;
-  return authData.user;
-}`}</code>
+              <code>{signUpCode}</code>
             </pre>
           </div>
         </div>
@@ -130,12 +337,7 @@ async function signUp(email: string, password: string, fullName: string) {
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `async function signIn(email: string, password: string) {\n  const { data, error } = await supabase.auth.signInWithPassword({\n    email,\n    password,\n  });\n\n  if (error) throw error;\n  return data.user;\n}`,
-                  'signin'
-                )
-              }
+              onClick={() => copyToClipboard(signInCode, 'signin')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'signin' ? (
@@ -145,16 +347,7 @@ async function signUp(email: string, password: string, fullName: string) {
               )}
             </button>
             <pre className="text-sm">
-              <code>{`// تسجيل الدخول
-async function signIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
-
-  if (error) throw error;
-  return data.user;
-}`}</code>
+              <code>{signInCode}</code>
             </pre>
           </div>
         </div>
@@ -173,12 +366,7 @@ async function signIn(email: string, password: string) {
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `async function activateLicense(licenseKey: string) {\n  const { data: { session } } = await supabase.auth.getSession();\n\n  if (!session) {\n    throw new Error('يجب تسجيل الدخول أولاً');\n  }\n\n  const response = await fetch(\n    '${supabaseUrl}/functions/v1/activate-license',\n    {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        'Authorization': \`Bearer \${session.access_token}\`,\n      },\n      body: JSON.stringify({ licenseKey }),\n    }\n  );\n\n  const data = await response.json();\n\n  if (!data.success) {\n    throw new Error(data.message);\n  }\n\n  return data;\n}`,
-                  'activate'
-                )
-              }
+              onClick={() => copyToClipboard(activateLicenseCode, 'activate')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'activate' ? (
@@ -188,33 +376,7 @@ async function signIn(email: string, password: string) {
               )}
             </button>
             <pre className="text-sm">
-              <code>{`async function activateLicense(licenseKey: string) {
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session) {
-    throw new Error('يجب تسجيل الدخول أولاً');
-  }
-
-  const response = await fetch(
-    '${supabaseUrl}/functions/v1/activate-license',
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': \`Bearer \${session.access_token}\`,
-      },
-      body: JSON.stringify({ licenseKey }),
-    }
-  );
-
-  const data = await response.json();
-
-  if (!data.success) {
-    throw new Error(data.message);
-  }
-
-  return data;
-}`}</code>
+              <code>{activateLicenseCode}</code>
             </pre>
           </div>
         </div>
@@ -238,12 +400,7 @@ async function signIn(email: string, password: string) {
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `async function checkUserLicense() {\n  const { data: { session } } = await supabase.auth.getSession();\n\n  if (!session) {\n    throw new Error('يجب تسجيل الدخول أولاً');\n  }\n\n  const response = await fetch(\n    '${supabaseUrl}/functions/v1/validate-license',\n    {\n      method: 'GET',\n      headers: {\n        'Authorization': \`Bearer \${session.access_token}\`,\n      },\n    }\n  );\n\n  const data = await response.json();\n\n  if (!data.isValid) {\n    return { isValid: false, message: data.message };\n  }\n\n  return {\n    isValid: true,\n    expiresAt: data.expiresAt,\n    license: data.license\n  };\n}`,
-                  'check'
-                )
-              }
+              onClick={() => copyToClipboard(checkUserLicenseCode, 'check')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'check' ? (
@@ -253,35 +410,7 @@ async function signIn(email: string, password: string) {
               )}
             </button>
             <pre className="text-sm">
-              <code>{`async function checkUserLicense() {
-  const { data: { session } } = await supabase.auth.getSession();
-
-  if (!session) {
-    throw new Error('يجب تسجيل الدخول أولاً');
-  }
-
-  const response = await fetch(
-    '${supabaseUrl}/functions/v1/validate-license',
-    {
-      method: 'GET',
-      headers: {
-        'Authorization': \`Bearer \${session.access_token}\`,
-      },
-    }
-  );
-
-  const data = await response.json();
-
-  if (!data.isValid) {
-    return { isValid: false, message: data.message };
-  }
-
-  return {
-    isValid: true,
-    expiresAt: data.expiresAt,
-    license: data.license
-  };
-}`}</code>
+              <code>{checkUserLicenseCode}</code>
             </pre>
           </div>
         </div>
@@ -299,12 +428,7 @@ async function signIn(email: string, password: string) {
         <div className="relative">
           <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
             <button
-              onClick={() =>
-                copyToClipboard(
-                  `const OFFLINE_LICENSE_KEY = 'app_license_offline';\n\nfunction saveOfflineLicense(data) {\n  localStorage.setItem(OFFLINE_LICENSE_KEY, JSON.stringify({\n    userId: data.userId,\n    email: data.email,\n    fullName: data.fullName,\n    licenseKey: data.licenseKey,\n    expiresAt: data.expiresAt,\n    lastValidated: new Date().toISOString(),\n  }));\n}\n\nfunction checkOfflineLicense() {\n  const data = localStorage.getItem(OFFLINE_LICENSE_KEY);\n  if (!data) return false;\n\n  const license = JSON.parse(data);\n  const now = new Date();\n  const expiresAt = new Date(license.expiresAt);\n\n  return expiresAt > now;\n}`,
-                  'offline'
-                )
-              }
+              onClick={() => copyToClipboard(offlineLicenseCode, 'offline')}
               className="absolute top-2 left-2 p-2 bg-gray-700 hover:bg-gray-600 rounded transition-colors"
             >
               {copiedCode === 'offline' ? (
@@ -314,29 +438,7 @@ async function signIn(email: string, password: string) {
               )}
             </button>
             <pre className="text-sm">
-              <code>{`const OFFLINE_LICENSE_KEY = 'app_license_offline';
-
-function saveOfflineLicense(data) {
-  localStorage.setItem(OFFLINE_LICENSE_KEY, JSON.stringify({
-    userId: data.userId,
-    email: data.email,
-    fullName: data.fullName,
-    licenseKey: data.licenseKey,
-    expiresAt: data.expiresAt,
-    lastValidated: new Date().toISOString(),
-  }));
-}
-
-function checkOfflineLicense() {
-  const data = localStorage.getItem(OFFLINE_LICENSE_KEY);
-  if (!data) return false;
-
-  const license = JSON.parse(data);
-  const now = new Date();
-  const expiresAt = new Date(license.expiresAt);
-
-  return expiresAt > now;
-}`}</code>
+              <code>{offlineLicenseCode}</code>
             </pre>
           </div>
         </div>

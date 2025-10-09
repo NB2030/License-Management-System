@@ -1,51 +1,11 @@
 import { Webhook, AlertCircle, ShoppingBag } from 'lucide-react';
+import ExportButton from './ExportButton';
 
 export default function KofiWebhookDocumentation() {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 
-  return (
-    <div className="space-y-6">
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Webhook className="w-6 h-6 text-blue-600" />
-          دليل ربط Ko-fi Webhook
-        </h2>
-        <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
-          <p>
-            يمكنك ربط نظام التراخيص مع Ko-fi لتفعيل التراخيص تلقائياً عند الشراء أو التبرع.
-          </p>
-        </div>
-      </section>
-
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">1. إعداد Webhook في Ko-fi</h3>
-        <div className="space-y-4">
-          <div>
-            <h4 className="font-semibold text-gray-700 mb-2">الخطوة الأولى: الحصول على رمز التحقق</h4>
-            <ol className="list-decimal list-inside space-y-2 text-gray-700 mr-4">
-              <li>سجل الدخول إلى حسابك في Ko-fi</li>
-              <li>اذهب إلى الإعدادات → API</li>
-              <li>انسخ "Verification Token"</li>
-            </ol>
-          </div>
-
-          <div>
-            <h4 className="font-semibold text-gray-700 mb-2">الخطوة الثانية: إضافة Webhook URL</h4>
-            <div className="bg-gray-100 p-3 rounded-lg mb-2">
-              <code className="text-sm break-all">{supabaseUrl}/functions/v1/kofi-webhook</code>
-            </div>
-            <p className="text-sm text-gray-600">
-              أضف هذا الرابط في حقل "Webhook URL" في إعدادات Ko-fi API
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">2. جدول فئات التسعير (Pricing Tiers)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create pricing_tiers table
+  const pricingTiersCode = `
+-- Create pricing_tiers table
 CREATE TYPE pricing_tier_type AS ENUM ('product', 'donation');
 
 CREATE TABLE public.pricing_tiers (
@@ -65,22 +25,11 @@ ALTER TABLE public.pricing_tiers ENABLE ROW LEVEL SECURITY;
 -- Policies
 CREATE POLICY "Admins can manage pricing tiers"
   ON public.pricing_tiers FOR ALL
-  USING (is_admin(auth.uid()));`}</code>
-          </pre>
-        </div>
+  USING (is_admin(auth.uid()));
+  `.trim();
 
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
-          <p className="text-sm text-blue-800">
-            <strong>ملاحظة:</strong> يجب إضافة فئات التسعير من لوحة الإدارة لربط المبالغ بمدد التراخيص
-          </p>
-        </div>
-      </section>
-
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">3. جدول طلبات Ko-fi (Ko-fi Orders)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create kofi_orders table
+  const kofiOrdersCode = `
+-- Create kofi_orders table
 CREATE TABLE public.kofi_orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   message_id TEXT NOT NULL UNIQUE,
@@ -120,16 +69,11 @@ CREATE POLICY "Admins can update kofi orders"
 
 CREATE POLICY "Admins can delete kofi orders"
   ON public.kofi_orders FOR DELETE
-  USING (is_admin(auth.uid()));`}</code>
-          </pre>
-        </div>
-      </section>
+  USING (is_admin(auth.uid()));
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">4. Trigger للربط التلقائي</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Function to link Ko-fi orders to new profiles
+  const autoLinkTriggerCode = `
+-- Function to link Ko-fi orders to new profiles
 CREATE OR REPLACE FUNCTION public.link_kofi_orders_to_new_profile()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -187,7 +131,166 @@ $$;
 CREATE TRIGGER link_kofi_orders_on_profile_create
   AFTER INSERT ON public.profiles
   FOR EACH ROW
-  EXECUTE FUNCTION public.link_kofi_orders_to_new_profile();`}</code>
+  EXECUTE FUNCTION public.link_kofi_orders_to_new_profile();
+  `.trim();
+
+  const webhookExampleCode = `
+{
+  "verification_token": "your-verification-token",
+  "message_id": "unique-message-id",
+  "timestamp": "2024-10-08T12:00:00Z",
+  "type": "Donation",
+  "from_name": "أحمد محمد",
+  "amount": "10.00",
+  "email": "ahmed@example.com",
+  "currency": "USD",
+  "kofi_transaction_id": "txn_12345",
+  "message": "شكراً على التطبيق الرائع!",
+  "is_public": true
+}
+  `.trim();
+
+  const markdownContent = `
+# دليل ربط Ko-fi Webhook
+
+يمكنك ربط نظام التراخيص مع Ko-fi لتفعيل التراخيص تلقائياً عند الشراء أو التبرع.
+
+## 1. إعداد Webhook في Ko-fi
+
+### الخطوة الأولى: الحصول على رمز التحقق
+1. سجل الدخول إلى حسابك في Ko-fi
+2. اذهب إلى الإعدادات → API
+3. انسخ "Verification Token"
+
+### الخطوة الثانية: إضافة Webhook URL
+أضف هذا الرابط في حقل "Webhook URL" في إعدادات Ko-fi API:
+\`\`\`
+${supabaseUrl}/functions/v1/kofi-webhook
+\`\`\`
+
+---
+
+## 2. جدول فئات التسعير (Pricing Tiers)
+**ملاحظة:** يجب إضافة فئات التسعير من لوحة الإدارة لربط المبالغ بمدد التراخيص.
+\`\`\`sql
+${pricingTiersCode}
+\`\`\`
+
+---
+
+## 3. جدول طلبات Ko-fi (Ko-fi Orders)
+\`\`\`sql
+${kofiOrdersCode}
+\`\`\`
+
+---
+
+## 4. Trigger للربط التلقائي
+**كيف يعمل:** عندما يسجل مستخدم جديد بنفس البريد الإلكتروني المستخدم في Ko-fi، يتم تفعيل ترخيصه تلقائياً.
+\`\`\`sql
+${autoLinkTriggerCode}
+\`\`\`
+
+---
+
+## كيفية الاستخدام
+
+### للتبرعات (Donations):
+1. أنشئ فئة تسعير من نوع "Donation" في لوحة الإدارة
+2. حدد المبلغ ومدة الترخيص بالأيام
+3. عندما يتبرع شخص بهذا المبلغ، سيتم إنشاء ترخيص تلقائياً
+4. إذا سجل المستخدم لاحقاً بنفس البريد، سيُربط الترخيص بحسابه
+
+### للمنتجات (Shop Orders):
+1. أنشئ فئة تسعير من نوع "Product"
+2. أدخل معرّف المنتج من Ko-fi (Product Identifier)
+3. عند شراء المنتج، سيتم التعرف عليه وإنشاء الترخيص
+
+---
+
+### نصائح الأمان:
+- احفظ رمز التحقق (Verification Token) بشكل آمن في Supabase Secrets
+- راجع طلبات Ko-fi بانتظام من لوحة الإدارة
+- تأكد من تفعيل Webhook في Ko-fi بشكل صحيح
+- استخدم فئات تسعير واضحة ومحددة
+
+---
+
+## مثال على بيانات Webhook
+\`\`\`json
+${webhookExampleCode}
+\`\`\`
+  `.trim();
+
+  return (
+    <div className="space-y-6 relative">
+      <ExportButton content={markdownContent} filename="kofi-webhook-guide.md" />
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Webhook className="w-6 h-6 text-blue-600" />
+          دليل ربط Ko-fi Webhook
+        </h2>
+        <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
+          <p>
+            يمكنك ربط نظام التراخيص مع Ko-fi لتفعيل التراخيص تلقائياً عند الشراء أو التبرع.
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">1. إعداد Webhook في Ko-fi</h3>
+        <div className="space-y-4">
+          <div>
+            <h4 className="font-semibold text-gray-700 mb-2">الخطوة الأولى: الحصول على رمز التحقق</h4>
+            <ol className="list-decimal list-inside space-y-2 text-gray-700 mr-4">
+              <li>سجل الدخول إلى حسابك في Ko-fi</li>
+              <li>اذهب إلى الإعدادات → API</li>
+              <li>انسخ "Verification Token"</li>
+            </ol>
+          </div>
+
+          <div>
+            <h4 className="font-semibold text-gray-700 mb-2">الخطوة الثانية: إضافة Webhook URL</h4>
+            <div className="bg-gray-100 p-3 rounded-lg mb-2">
+              <code className="text-sm break-all">{supabaseUrl}/functions/v1/kofi-webhook</code>
+            </div>
+            <p className="text-sm text-gray-600">
+              أضف هذا الرابط في حقل "Webhook URL" في إعدادات Ko-fi API
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">2. جدول فئات التسعير (Pricing Tiers)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{pricingTiersCode}</code>
+          </pre>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-4">
+          <p className="text-sm text-blue-800">
+            <strong>ملاحظة:</strong> يجب إضافة فئات التسعير من لوحة الإدارة لربط المبالغ بمدد التراخيص
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">3. جدول طلبات Ko-fi (Ko-fi Orders)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{kofiOrdersCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">4. Trigger للربط التلقائي</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{autoLinkTriggerCode}</code>
           </pre>
         </div>
 
@@ -245,19 +348,7 @@ CREATE TRIGGER link_kofi_orders_on_profile_create
         <h3 className="text-xl font-semibold text-gray-800 mb-4">مثال على بيانات Webhook</h3>
         <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto">
           <pre className="text-sm">
-            <code>{`{
-  "verification_token": "your-verification-token",
-  "message_id": "unique-message-id",
-  "timestamp": "2024-10-08T12:00:00Z",
-  "type": "Donation",
-  "from_name": "أحمد محمد",
-  "amount": "10.00",
-  "email": "ahmed@example.com",
-  "currency": "USD",
-  "kofi_transaction_id": "txn_12345",
-  "message": "شكراً على التطبيق الرائع!",
-  "is_public": true
-}`}</code>
+            <code>{webhookExampleCode}</code>
           </pre>
         </div>
       </section>
