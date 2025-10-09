@@ -12,6 +12,8 @@ interface PricingTier {
   tier_type: 'product' | 'donation';
   product_identifier: string | null;
   created_at: string | null;
+  is_flexible_pricing: boolean | null;
+  days_per_dollar: number | null;
 }
 
 export default function PricingTiers() {
@@ -25,6 +27,8 @@ export default function PricingTiers() {
     name: '',
     tier_type: 'donation' as 'product' | 'donation',
     product_identifier: '',
+    is_flexible_pricing: false,
+    days_per_dollar: 30,
   });
   const { toast } = useToast();
 
@@ -88,6 +92,8 @@ export default function PricingTiers() {
         tier_type: formData.tier_type,
         product_identifier: formData.tier_type === 'product' ? formData.product_identifier : null,
         is_active: true,
+        is_flexible_pricing: formData.tier_type === 'product' ? formData.is_flexible_pricing : false,
+        days_per_dollar: formData.tier_type === 'product' && formData.is_flexible_pricing ? formData.days_per_dollar : 0,
       });
 
       if (error) throw error;
@@ -98,7 +104,7 @@ export default function PricingTiers() {
       });
       
       setShowCreateModal(false);
-      setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '' });
+      setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
       loadTiers();
     } catch (error) {
       console.error('Error creating tier:', error);
@@ -130,6 +136,8 @@ export default function PricingTiers() {
           name: formData.name,
           tier_type: formData.tier_type,
           product_identifier: formData.tier_type === 'product' ? formData.product_identifier : null,
+          is_flexible_pricing: formData.tier_type === 'product' ? formData.is_flexible_pricing : false,
+          days_per_dollar: formData.tier_type === 'product' && formData.is_flexible_pricing ? formData.days_per_dollar : 0,
         })
         .eq('id', id);
 
@@ -184,12 +192,14 @@ export default function PricingTiers() {
       name: tier.name,
       tier_type: tier.tier_type,
       product_identifier: tier.product_identifier || '',
+      is_flexible_pricing: tier.is_flexible_pricing || false,
+      days_per_dollar: tier.days_per_dollar || 30,
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '' });
+    setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
   };
 
   if (loading) {
@@ -212,7 +222,7 @@ export default function PricingTiers() {
         </div>
         <button
           onClick={() => {
-            setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '' });
+            setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
             setShowCreateModal(true);
           }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -316,9 +326,15 @@ export default function PricingTiers() {
                       </div>
                       <div>
                         <h3 className="font-semibold text-lg">{tier.name}</h3>
-                        <div className="flex gap-4 mt-1 text-sm text-gray-600">
-                          <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">معرّف: {tier.product_identifier}</span>
-                          <span>المدة: {tier.duration_days} يوم ({Math.round(tier.duration_days / 30)} شهر)</span>
+                        <div className="flex flex-col gap-1 mt-1 text-sm text-gray-600">
+                          <span className="font-mono bg-gray-100 px-2 py-0.5 rounded inline-block w-fit">معرّف: {tier.product_identifier}</span>
+                          {tier.is_flexible_pricing ? (
+                            <span className="text-green-600 font-semibold">
+                              💰 تسعير مرن: {tier.days_per_dollar} يوم لكل دولار
+                            </span>
+                          ) : (
+                            <span>المدة: {tier.duration_days} يوم ({Math.round(tier.duration_days / 30)} شهر)</span>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -507,18 +523,53 @@ export default function PricingTiers() {
                       أدخل Variation Name أو Direct Link Code من Ko-fi بالضبط
                     </p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      عدد الأيام
-                    </label>
+                  
+                  {/* Flexible Pricing Toggle */}
+                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
                     <input
-                      type="number"
-                      value={formData.duration_days}
-                      onChange={(e) => setFormData({ ...formData, duration_days: parseInt(e.target.value) })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      placeholder="30"
+                      type="checkbox"
+                      id="flexiblePricing"
+                      checked={formData.is_flexible_pricing}
+                      onChange={(e) => setFormData({ ...formData, is_flexible_pricing: e.target.checked })}
+                      className="w-5 h-5 text-green-600 rounded focus:ring-green-500"
                     />
+                    <label htmlFor="flexiblePricing" className="flex-1 cursor-pointer">
+                      <div className="font-semibold text-green-900">تفعيل التسعير المرن (Pay What You Want)</div>
+                      <div className="text-sm text-green-700">المدة تُحسب تلقائياً بناءً على المبلغ المدفوع</div>
+                    </label>
                   </div>
+
+                  {formData.is_flexible_pricing ? (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        عدد الأيام لكل دولار 💰
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.days_per_dollar}
+                        onChange={(e) => setFormData({ ...formData, days_per_dollar: parseFloat(e.target.value) })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="30"
+                        step="0.1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        مثال: 30 يوم لكل دولار = إذا دفع 5$ سيحصل على {Math.floor(5 * formData.days_per_dollar)} يوم ({Math.floor((5 * formData.days_per_dollar) / 30)} شهر)
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        عدد الأيام (ثابت)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.duration_days}
+                        onChange={(e) => setFormData({ ...formData, duration_days: parseInt(e.target.value) })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        placeholder="30"
+                      />
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

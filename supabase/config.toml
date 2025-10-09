@@ -1,1 +1,4 @@
 project_id = "iwipefxjymkqpsuxkupo"
+
+[functions.kofi-webhook]
+verify_jwt = false

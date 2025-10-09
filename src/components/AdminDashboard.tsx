@@ -328,6 +328,39 @@ export default function AdminDashboard() {
     }
   };
 
+  const deleteUserAccount = async (userId: string) => {
+    if (!confirm('⚠️ تحذير: سيتم حذف الحساب بالكامل ولن يتمكن المستخدم من تسجيل الدخول مرة أخرى.\n\nهل أنت متأكد؟')) {
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase.rpc('delete_user_account', {
+        user_uuid: userId
+      });
+
+      if (error) throw error;
+
+      const result = data as { success: boolean; message: string } | null;
+
+      if (result?.success) {
+        toast({
+          title: "نجح",
+          description: "تم حذف الحساب بنجاح"
+        });
+        loadData();
+      } else {
+        throw new Error(result?.message || 'فشل حذف الحساب');
+      }
+    } catch (error: any) {
+      console.error('Error deleting user account:', error);
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: error.message || "فشل حذف الحساب"
+      });
+    }
+  };
+
   const calculateDaysRemaining = (expiresAt: string): number => {
     const today = new Date();
     const expiryDate = new Date(expiresAt);
@@ -782,13 +815,22 @@ export default function AdminDashboard() {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <button
-                              onClick={() => startEditUserLicense(userLicense)}
-                              className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                              title="تحرير"
-                            >
-                              <Edit2 className="w-5 h-5" />
-                            </button>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => startEditUserLicense(userLicense)}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                title="تحرير"
+                              >
+                                <Edit2 className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => deleteUserAccount(userLicense.user_id)}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                title="حذف الحساب"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
+                            </div>
                           </td>
                         </>
                       )}

@@ -27,7 +27,7 @@ const kofiWebhookSchema = z.object({
     direct_link_code: z.string().max(100),
     variation_name: z.string().max(255),
     quantity: z.number().int().positive()
-  })).optional(),
+  })).nullable().optional(),
   tier_name: z.string().max(255).nullable().optional(),
   shipping: z.object({
     full_name: z.string().max(255),
@@ -179,8 +179,8 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // Additional idempotency: check by kofi_transaction_id
-    if (data.kofi_transaction_id) {
+    // Additional idempotency: check by kofi_transaction_id (only if it's not a test ID)
+    if (data.kofi_transaction_id && data.kofi_transaction_id !== '00000000-1111-2222-3333-444444444444') {
       const { data: existingByTxn } = await supabase
         .from('kofi_orders')
         .select('id, license_id')
@@ -223,6 +223,8 @@ Deno.serve(async (req: Request) => {
         .eq('tier_type', 'product')
         .eq('product_identifier', productCode)
         .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (productTierError) {
@@ -230,9 +232,22 @@ Deno.serve(async (req: Request) => {
       }
 
       if (productTier) {
-        durationDays = productTier.duration_days;
-        tierUsed = productTier.name;
-        shouldCreateLicense = true;
+        // Check if this is a flexible pricing product (Pay What You Want)
+        if (productTier.is_flexible_pricing && productTier.days_per_dollar > 0) {
+          const amount = parseFloat(data.amount);
+          durationDays = Math.floor(amount * productTier.days_per_dollar);
+          tierUsed = `${productTier.name} (مرن)`;
+          shouldCreateLicense = true;
+          console.log('💰 Flexible pricing applied:');
+          console.log('   Amount paid:', amount, data.currency);
+          console.log('   Days per dollar:', productTier.days_per_dollar);
+          console.log('   Calculated duration:', durationDays, 'days');
+        } else {
+          // Fixed duration product
+          durationDays = productTier.duration_days;
+          tierUsed = productTier.name;
+          shouldCreateLicense = true;
+        }
         console.log('✓ Product tier matched:', tierUsed, '| Duration:', durationDays, 'days');
       } else {
         console.log('⚠ No matching product tier for code:', productCode);
@@ -310,6 +325,11 @@ Deno.serve(async (req: Request) => {
     }
 
     // Store Ko-fi order with sanitized text fields
+    // For test orders, set kofi_transaction_id to null to avoid unique constraint
+    const transactionId = data.kofi_transaction_id === '00000000-1111-2222-3333-444444444444' 
+      ? null 
+      : data.kofi_transaction_id;
+
     const { error: orderError } = await supabase
       .from('kofi_orders')
       .insert({
@@ -326,7 +346,7 @@ Deno.serve(async (req: Request) => {
         currency: data.currency,
         is_subscription_payment: data.is_subscription_payment,
         is_first_subscription_payment: data.is_first_subscription_payment,
-        kofi_transaction_id: data.kofi_transaction_id,
+        kofi_transaction_id: transactionId,
         shop_items: data.shop_items,
         tier_name: data.tier_name,
         shipping: data.shipping,

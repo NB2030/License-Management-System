@@ -185,9 +185,11 @@ export type Database = {
         Row: {
           amount: number
           created_at: string | null
+          days_per_dollar: number | null
           duration_days: number
           id: string
           is_active: boolean | null
+          is_flexible_pricing: boolean | null
           name: string
           product_identifier: string | null
           tier_type: Database["public"]["Enums"]["pricing_tier_type"]
@@ -195,9 +197,11 @@ export type Database = {
         Insert: {
           amount: number
           created_at?: string | null
+          days_per_dollar?: number | null
           duration_days: number
           id?: string
           is_active?: boolean | null
+          is_flexible_pricing?: boolean | null
           name: string
           product_identifier?: string | null
           tier_type?: Database["public"]["Enums"]["pricing_tier_type"]
@@ -205,9 +209,11 @@ export type Database = {
         Update: {
           amount?: number
           created_at?: string | null
+          days_per_dollar?: number | null
           duration_days?: number
           id?: string
           is_active?: boolean | null
+          is_flexible_pricing?: boolean | null
           name?: string
           product_identifier?: string | null
           tier_type?: Database["public"]["Enums"]["pricing_tier_type"]
@@ -291,6 +297,10 @@ export type Database = {
       create_default_admin: {
         Args: Record<PropertyKey, never>
         Returns: undefined
+      }
+      delete_user_account: {
+        Args: { user_uuid: string }
+        Returns: Json
       }
       is_admin: {
         Args: { check_user_id: string }
