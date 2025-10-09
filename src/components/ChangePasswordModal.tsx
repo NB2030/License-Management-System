@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Lock, AlertCircle, CheckCircle } from 'lucide-react';
+import { passwordSchema } from '../lib/validation';
+import { z } from 'zod';
 
 interface ChangePasswordModalProps {
   onPasswordChanged: () => void;
@@ -16,9 +18,14 @@ export default function ChangePasswordModal({ onPasswordChanged }: ChangePasswor
     e.preventDefault();
     setError('');
 
-    if (newPassword.length < 6) {
-      setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل');
-      return;
+    // Validate password strength using the same schema as registration
+    try {
+      passwordSchema.parse(newPassword);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        setError(err.issues[0].message);
+        return;
+      }
     }
 
     if (newPassword !== confirmPassword) {
@@ -100,7 +107,7 @@ export default function ChangePasswordModal({ onPasswordChanged }: ChangePasswor
               autoComplete="new-password"
             />
             <p className="mt-1 text-xs text-gray-500">
-              يجب أن تحتوي على 6 أحرف على الأقل
+              يجب أن تحتوي على 8 أحرف على الأقل، حرف كبير، حرف صغير، ورقم
             </p>
           </div>
 

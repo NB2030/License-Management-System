@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { logError } from './errors';
 
 export interface AuthUser {
   id: string;
@@ -63,20 +64,26 @@ export const authService = {
   },
 
   async isAdmin(): Promise<boolean> {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return false;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
 
-    const { data } = await supabase
-      .from('admin_users')
-      .select('id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+      const { data, error } = await supabase.rpc('is_admin', { check_user_id: user.id });
+      
+      if (error) {
+        logError('isAdmin check', error);
+        return false;
+      }
 
-    return !!data;
+      return !!data;
+    } catch (error) {
+      logError('isAdmin check', error);
+      return false;
+    }
   },
 
   onAuthStateChange(callback: (user: AuthUser | null) => void) {
-    return supabase.auth.onAuthStateChange((event, session) => {
+    return supabase.auth.onAuthStateChange((_event: string, session: any) => {
       (async () => {
         if (session?.user) {
           const user = await authService.getCurrentUser();

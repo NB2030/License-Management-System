@@ -2,10 +2,13 @@ import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabase';
 import AdminLoginForm from './components/AdminLoginForm';
 import AdminDashboard from './components/AdminDashboard';
+import AdminProfile from './components/AdminProfile';
 import Documentation from './components/Documentation';
-import { BookOpen, LayoutDashboard, LogOut, Shield } from 'lucide-react';
+import KofiOrders from './components/KofiOrders';
+import PricingTiers from './components/PricingTiers';
+import { BookOpen, LayoutDashboard, LogOut, Shield, UserCircle, ShoppingCart, DollarSign } from 'lucide-react';
 
-type View = 'dashboard' | 'docs';
+type View = 'dashboard' | 'docs' | 'profile' | 'kofi' | 'pricing';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -16,10 +19,14 @@ function App() {
   useEffect(() => {
     checkAuth();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        checkAdminStatus(session.user.id);
-      } else if (event === 'SIGNED_OUT') {
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event: string, session: any) => {
+      if (_event === 'SIGNED_IN' && session) {
+        // Only check admin status if not already authenticated
+        // This prevents unnecessary calls on every auth state change
+        if (!isAuthenticated) {
+          checkAdminStatus();
+        }
+      } else if (_event === 'SIGNED_OUT') {
         setIsAuthenticated(false);
       }
     });
@@ -27,14 +34,14 @@ function App() {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, []);
+  }, [isAuthenticated]);
 
   const checkAuth = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
-        await checkAdminStatus(user.id);
+        await checkAdminStatus();
       }
     } catch (error) {
       console.error('Auth check error:', error);
@@ -43,15 +50,13 @@ function App() {
     }
   };
 
-  const checkAdminStatus = async (userId: string) => {
+  const checkAdminStatus = async () => {
     try {
-      const { data: adminData, error } = await supabase
-        .from('admin_users')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
+      // Use server-side admin verification via Edge Function
+      const { data, error } = await supabase.functions.invoke('check-admin');
 
-      if (error || !adminData) {
+      if (error || !data?.isAdmin) {
+        console.error('Admin verification failed:', error);
         await supabase.auth.signOut();
         setIsAuthenticated(false);
         return;
@@ -124,6 +129,30 @@ function App() {
               </button>
 
               <button
+                onClick={() => setCurrentView('kofi')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  currentView === 'kofi'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <ShoppingCart className="w-4 h-4" />
+                طلبات Ko-fi
+              </button>
+
+              <button
+                onClick={() => setCurrentView('pricing')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  currentView === 'pricing'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <DollarSign className="w-4 h-4" />
+                فئات التسعير
+              </button>
+
+              <button
                 onClick={() => setCurrentView('docs')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
                   currentView === 'docs'
@@ -133,6 +162,18 @@ function App() {
               >
                 <BookOpen className="w-4 h-4" />
                 التوثيق
+              </button>
+
+              <button
+                onClick={() => setCurrentView('profile')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  currentView === 'profile'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <UserCircle className="w-4 h-4" />
+                الملف الشخصي
               </button>
 
               <button
@@ -148,7 +189,10 @@ function App() {
       </nav>
 
       {currentView === 'dashboard' && <AdminDashboard />}
+      {currentView === 'kofi' && <KofiOrders />}
+      {currentView === 'pricing' && <PricingTiers />}
       {currentView === 'docs' && <Documentation />}
+      {currentView === 'profile' && <AdminProfile />}
     </div>
   );
 }

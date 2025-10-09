@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { adminLoginSchema } from '../lib/validation';
+import { logError } from '../lib/errors';
 import { Shield, AlertCircle, LogIn } from 'lucide-react';
+import { z } from 'zod';
 
 interface AdminLoginFormProps {
   onLoginSuccess: () => void;
@@ -18,6 +21,17 @@ export default function AdminLoginForm({ onLoginSuccess }: AdminLoginFormProps) 
     setLoading(true);
 
     try {
+      // Validate input
+      try {
+        adminLoginSchema.parse({ email, password });
+      } catch (validationError) {
+        if (validationError instanceof z.ZodError) {
+          setError(validationError.issues[0].message);
+          setLoading(false);
+          return;
+        }
+      }
+
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -40,7 +54,7 @@ export default function AdminLoginForm({ onLoginSuccess }: AdminLoginFormProps) 
 
       onLoginSuccess();
     } catch (err: any) {
-      console.error('Auth error:', err);
+      logError('Admin login', err);
       setError(err.message || 'حدث خطأ أثناء العملية');
     } finally {
       setLoading(false);

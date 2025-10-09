@@ -1,25 +1,11 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Environment variables:', {
-    url: supabaseUrl,
-    key: supabaseAnonKey ? 'present' : 'missing',
-    allEnv: import.meta.env
-  });
-  throw new Error('Missing Supabase environment variables');
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export { supabase } from '../integrations/supabase/client';
 
 export interface Profile {
   id: string;
   email: string;
   full_name: string;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
 }
 
 export interface License {
@@ -28,20 +14,20 @@ export interface License {
   duration_days: number;
   max_activations: number;
   current_activations: number;
-  is_active: boolean;
-  created_at: string;
-  created_by: string;
-  notes: string;
+  is_active: boolean | null;
+  created_at: string | null;
+  created_by: string | null;
+  notes: string | null;
 }
 
 export interface UserLicense {
   id: string;
   user_id: string;
   license_id: string;
-  activated_at: string;
+  activated_at: string | null;
   expires_at: string;
-  is_active: boolean;
-  last_validated: string;
+  is_active: boolean | null;
+  last_validated: string | null;
 }
 
 export interface UserLicenseWithDetails extends UserLicense {

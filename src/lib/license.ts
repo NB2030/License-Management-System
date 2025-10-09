@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { logError, mapErrorToUserMessage } from './errors';
 
 const OFFLINE_LICENSE_KEY = 'app_license_offline';
 
@@ -78,10 +79,10 @@ export const licenseService = {
         message: 'تم تفعيل الترخيص بنجاح',
         expiresAt: expiresAt.toISOString(),
       };
-    } catch (error) {
-      console.error('License activation error:', error);
-      return { success: false, message: 'حدث خطأ أثناء تفعيل الترخيص' };
-    }
+  } catch (error) {
+    logError('License activation', error);
+    return { success: false, message: mapErrorToUserMessage(error) };
+  }
   },
 
   async checkUserLicense(userId: string): Promise<{ isValid: boolean; expiresAt?: string }> {
@@ -116,10 +117,10 @@ export const licenseService = {
         .eq('id', data.id);
 
       return { isValid: true, expiresAt: data.expires_at };
-    } catch (error) {
-      console.error('License check error:', error);
-      return { isValid: false };
-    }
+  } catch (error) {
+    logError('License check', error);
+    return { isValid: false };
+  }
   },
 
   saveOfflineLicense(data: OfflineLicenseData) {

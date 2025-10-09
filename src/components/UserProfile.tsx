@@ -178,7 +178,7 @@ export default function UserProfile({ onLogout }: UserProfileProps) {
                           </span>
                         </div>
                         <div className="text-sm text-gray-600">
-                          <p>تاريخ التفعيل: {new Date(license.activated_at).toLocaleDateString('ar-SA')}</p>
+                          <p>تاريخ التفعيل: {license.activated_at ? new Date(license.activated_at).toLocaleDateString('ar-SA') : '-'}</p>
                           <p>تاريخ الانتهاء: {new Date(license.expires_at).toLocaleDateString('ar-SA')}</p>
                         </div>
                       </div>

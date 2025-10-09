@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { authService } from '../lib/auth';
 import { licenseService } from '../lib/license';
+import { registerSchema, loginSchema } from '../lib/validation';
+import { logError } from '../lib/errors';
 import { LogIn, UserPlus, Key } from 'lucide-react';
+import { z } from 'zod';
 
 interface AuthFormProps {
   onAuthSuccess: () => void;
@@ -23,11 +26,26 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setLoading(true);
 
     try {
-      if (mode === 'signup') {
-        if (!fullName) {
-          setError('الرجاء إدخال الاسم الكامل');
+      // Validate input
+      const schema = mode === 'signup' ? registerSchema : loginSchema;
+      const validationData = {
+        email,
+        password,
+        ...(mode === 'signup' && { fullName }),
+        ...(licenseKey && { licenseKey }),
+      };
+
+      try {
+        schema.parse(validationData);
+      } catch (validationError) {
+        if (validationError instanceof z.ZodError) {
+          setError(validationError.issues[0].message);
+          setLoading(false);
           return;
         }
+      }
+
+      if (mode === 'signup') {
 
         const user = await authService.signUp(email, password, fullName);
 
@@ -39,7 +57,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           }
 
           if (result.expiresAt) {
-            const { data: profile } = await authService.getCurrentUser();
+            const profile = await authService.getCurrentUser();
             if (profile) {
               licenseService.saveOfflineLicense({
                 userId: user.id,
@@ -82,6 +100,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         onAuthSuccess();
       }
     } catch (err: any) {
+      logError('Auth form submission', err);
       setError(err.message || 'حدث خطأ غير متوقع');
     } finally {
       setLoading(false);
@@ -147,7 +166,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={mode === 'signup' ? 8 : 1}
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               placeholder="••••••••"
             />

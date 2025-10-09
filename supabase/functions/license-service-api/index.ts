@@ -1,10 +1,28 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.74.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey, x-api-key',
 };
+
+// Map errors to safe user messages
+function getSafeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (msg.includes('duplicate key') || msg.includes('already registered')) {
+      return 'User already exists';
+    }
+    if (msg.includes('invalid login') || msg.includes('invalid password')) {
+      return 'Invalid email or password';
+    }
+    if (msg.includes('permission denied') || msg.includes('jwt')) {
+      return 'Access denied';
+    }
+    if (msg.includes('foreign key')) return 'Referenced item not found';
+  }
+  return 'An error occurred processing your request';
+}
 
 interface RegisterRequest {
   email: string;
@@ -271,9 +289,15 @@ Deno.serve(async (req: Request) => {
       { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('Error:', error);
+    // Log full error details server-side only
+    console.error('Error in license service:', error);
+    
+    // Return safe error message to client
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        success: false, 
+        message: getSafeErrorMessage(error) 
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
