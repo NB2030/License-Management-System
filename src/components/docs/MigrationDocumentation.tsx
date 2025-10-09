@@ -1,25 +1,9 @@
 import { Database, AlertCircle } from 'lucide-react';
+import ExportButton from './ExportButton';
 
 export default function MigrationDocumentation() {
-  return (
-    <div className="space-y-6">
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
-          <Database className="w-6 h-6 text-blue-600" />
-          دليل ترحيل قاعدة البيانات
-        </h2>
-        <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
-          <p>
-            لربط تطبيقك بنظام التراخيص، تحتاج إلى إنشاء جداول قاعدة البيانات التالية في مشروع Supabase الخاص بك.
-          </p>
-        </div>
-      </section>
-
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">1. جدول الملفات الشخصية (Profiles)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create profiles table
+  const profilesCode = `
+-- Create profiles table
 CREATE TABLE public.profiles (
   id UUID PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
@@ -42,16 +26,11 @@ CREATE POLICY "Users can update own profile"
 
 CREATE POLICY "Users can insert own profile"
   ON public.profiles FOR INSERT
-  WITH CHECK (auth.uid() = id);`}</code>
-          </pre>
-        </div>
-      </section>
+  WITH CHECK (auth.uid() = id);
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">2. جدول التراخيص (Licenses)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create licenses table
+  const licensesCode = `
+-- Create licenses table
 CREATE TABLE public.licenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   license_key TEXT NOT NULL UNIQUE,
@@ -106,16 +85,11 @@ CREATE POLICY "Admins can update licenses"
 
 CREATE POLICY "Admins can delete licenses"
   ON public.licenses FOR DELETE
-  USING (is_admin(auth.uid()));`}</code>
-          </pre>
-        </div>
-      </section>
+  USING (is_admin(auth.uid()));
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">3. جدول تراخيص المستخدمين (User Licenses)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create user_licenses table
+  const userLicensesCode = `
+-- Create user_licenses table
 CREATE TABLE public.user_licenses (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,
@@ -148,16 +122,11 @@ CREATE POLICY "Admins can view all user licenses"
 
 CREATE POLICY "Admins can update all user licenses"
   ON public.user_licenses FOR UPDATE
-  USING (is_admin(auth.uid()));`}</code>
-          </pre>
-        </div>
-      </section>
+  USING (is_admin(auth.uid()));
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">4. جدول المشرفين (Admin Users)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create admin_users table
+  const adminUsersCode = `
+-- Create admin_users table
 CREATE TABLE public.admin_users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE,
@@ -176,16 +145,11 @@ CREATE POLICY "Users can read own admin record"
 
 CREATE POLICY "Users can update own admin record"
   ON public.admin_users FOR UPDATE
-  USING (user_id = auth.uid());`}</code>
-          </pre>
-        </div>
-      </section>
+  USING (user_id = auth.uid());
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">5. جدول رموز الوصول (Admin Access Codes)</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Create admin_access_codes table
+  const accessCodesCode = `
+-- Create admin_access_codes table
 CREATE TABLE public.admin_access_codes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   access_code TEXT NOT NULL UNIQUE,
@@ -204,16 +168,11 @@ CREATE POLICY "Only admins can read access codes"
 
 CREATE POLICY "Admins can manage access codes"
   ON public.admin_access_codes FOR ALL
-  USING (is_admin(auth.uid()));`}</code>
-          </pre>
-        </div>
-      </section>
+  USING (is_admin(auth.uid()));
+  `.trim();
 
-      <section className="bg-white rounded-xl shadow-sm p-6">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">6. تحديث الطوابع الزمنية تلقائياً</h3>
-        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
-          <pre className="text-sm">
-            <code>{`-- Function to update updated_at timestamp
+  const timestampTriggerCode = `
+-- Function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -230,7 +189,119 @@ $$;
 CREATE TRIGGER update_profiles_updated_at
   BEFORE UPDATE ON public.profiles
   FOR EACH ROW
-  EXECUTE FUNCTION public.update_updated_at_column();`}</code>
+  EXECUTE FUNCTION public.update_updated_at_column();
+  `.trim();
+
+  const markdownContent = `
+# دليل ترحيل قاعدة البيانات
+
+لربط تطبيقك بنظام التراخيص، تحتاج إلى إنشاء جداول قاعدة البيانات التالية في مشروع Supabase الخاص بك.
+
+## 1. جدول الملفات الشخصية (Profiles)
+\`\`\`sql
+${profilesCode}
+\`\`\`
+
+## 2. جدول التراخيص (Licenses)
+\`\`\`sql
+${licensesCode}
+\`\`\`
+
+## 3. جدول تراخيص المستخدمين (User Licenses)
+\`\`\`sql
+${userLicensesCode}
+\`\`\`
+
+## 4. جدول المشرفين (Admin Users)
+\`\`\`sql
+${adminUsersCode}
+\`\`\`
+
+## 5. جدول رموز الوصول (Admin Access Codes)
+\`\`\`sql
+${accessCodesCode}
+\`\`\`
+
+## 6. تحديث الطوابع الزمنية تلقائياً
+\`\`\`sql
+${timestampTriggerCode}
+\`\`\`
+
+---
+
+### ملاحظات مهمة:
+- تأكد من تفعيل Row Level Security (RLS) على جميع الجداول
+- راجع سياسات الأمان (Policies) وتأكد من مناسبتها لتطبيقك
+- قم بإنشاء مستخدم مشرف أول يدوياً من لوحة تحكم Supabase
+- احفظ نسخة احتياطية من قاعدة البيانات بانتظام
+  `.trim();
+
+  return (
+    <div className="space-y-6 relative">
+      <ExportButton content={markdownContent} filename="database-migration-guide.md" />
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <Database className="w-6 h-6 text-blue-600" />
+          دليل ترحيل قاعدة البيانات
+        </h2>
+        <div className="prose prose-sm max-w-none text-gray-700 space-y-3">
+          <p>
+            لربط تطبيقك بنظام التراخيص، تحتاج إلى إنشاء جداول قاعدة البيانات التالية في مشروع Supabase الخاص بك.
+          </p>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">1. جدول الملفات الشخصية (Profiles)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{profilesCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">2. جدول التراخيص (Licenses)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{licensesCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">3. جدول تراخيص المستخدمين (User Licenses)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{userLicensesCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">4. جدول المشرفين (Admin Users)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{adminUsersCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">5. جدول رموز الوصول (Admin Access Codes)</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{accessCodesCode}</code>
+          </pre>
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm p-6">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">6. تحديث الطوابع الزمنية تلقائياً</h3>
+        <div className="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-x-auto mb-4">
+          <pre className="text-sm">
+            <code>{timestampTriggerCode}</code>
           </pre>
         </div>
       </section>
