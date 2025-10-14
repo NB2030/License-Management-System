@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.74.0';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey, x-api-key',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey, x-app-key, x-app-secret',
 };
 
 // Map errors to safe user messages
@@ -131,7 +131,33 @@ Deno.serve(async (req: Request) => {
     if (path.endsWith('/activate') && req.method === 'POST') {
       const { licenseKey, token }: ActivateLicenseRequest = await req.json();
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      // Validate app credentials from headers
+      const appKey = req.headers.get('x-app-key');
+      const appSecret = req.headers.get('x-app-secret');
+      if (!appKey || !appSecret) {
+        return new Response(
+          JSON.stringify({ success: false, message: 'Missing application credentials' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: validationResult } = await supabase.rpc('validate_app_credentials', {
+        p_app_key: appKey,
+        p_app_secret: appSecret,
+      });
+
+      if (!validationResult || validationResult.length === 0) {
+        return new Response(
+          JSON.stringify({ success: false, message: 'Invalid application credentials' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const application = validationResult[0];
+
+      // Get user
+      const bearer = req.headers.get('Authorization');
+      const accessToken = bearer?.startsWith('Bearer ') ? bearer.replace('Bearer ', '') : token;
+      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken ?? '');
       if (authError || !user) {
         return new Response(
           JSON.stringify({ success: false, message: 'Invalid token' }),
@@ -139,16 +165,18 @@ Deno.serve(async (req: Request) => {
         );
       }
 
+      // Only allow activating licenses that belong to this application
       const { data: license, error: licenseError } = await supabase
         .from('licenses')
         .select('*')
         .eq('license_key', licenseKey)
         .eq('is_active', true)
+        .eq('application_id', application.application_id)
         .maybeSingle();
 
       if (licenseError || !license) {
         return new Response(
-          JSON.stringify({ success: false, message: 'Invalid or inactive license' }),
+          JSON.stringify({ success: false, message: 'Invalid license for this application' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -207,7 +235,31 @@ Deno.serve(async (req: Request) => {
     if (path.endsWith('/validate') && req.method === 'POST') {
       const { token }: ValidateLicenseRequest = await req.json();
 
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      // Validate app credentials
+      const appKey = req.headers.get('x-app-key');
+      const appSecret = req.headers.get('x-app-secret');
+      if (!appKey || !appSecret) {
+        return new Response(
+          JSON.stringify({ isValid: false, message: 'Missing application credentials' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const { data: validationResult } = await supabase.rpc('validate_app_credentials', {
+        p_app_key: appKey,
+        p_app_secret: appSecret,
+      });
+      if (!validationResult || validationResult.length === 0) {
+        return new Response(
+          JSON.stringify({ isValid: false, message: 'Invalid application credentials' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const application = validationResult[0];
+
+      const bearer = req.headers.get('Authorization');
+      const accessToken = bearer?.replace('Bearer ', '') ?? token;
+      const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken ?? '');
       if (authError || !user) {
         return new Response(
           JSON.stringify({ isValid: false, message: 'Invalid token' }),
@@ -220,13 +272,14 @@ Deno.serve(async (req: Request) => {
         .select('*, licenses(*)')
         .eq('user_id', user.id)
         .eq('is_active', true)
+        .eq('licenses.application_id', application.application_id)
         .order('expires_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (!userLicense) {
         return new Response(
-          JSON.stringify({ isValid: false, message: 'No active license found' }),
+          JSON.stringify({ isValid: false, message: 'No active license found for this application' }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

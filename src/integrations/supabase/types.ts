@@ -62,6 +62,42 @@ export type Database = {
         }
         Relationships: []
       }
+      applications: {
+        Row: {
+          app_key: string
+          app_secret: string
+          created_at: string | null
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          app_key: string
+          app_secret: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          app_key?: string
+          app_secret?: string
+          created_at?: string | null
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       kofi_orders: {
         Row: {
           amount: string
@@ -147,6 +183,7 @@ export type Database = {
       }
       licenses: {
         Row: {
+          application_id: string | null
           created_at: string | null
           created_by: string | null
           current_activations: number
@@ -158,6 +195,7 @@ export type Database = {
           notes: string | null
         }
         Insert: {
+          application_id?: string | null
           created_at?: string | null
           created_by?: string | null
           current_activations?: number
@@ -169,6 +207,7 @@ export type Database = {
           notes?: string | null
         }
         Update: {
+          application_id?: string | null
           created_at?: string | null
           created_by?: string | null
           current_activations?: number
@@ -179,11 +218,20 @@ export type Database = {
           max_activations?: number
           notes?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "licenses_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pricing_tiers: {
         Row: {
           amount: number
+          application_id: string | null
           created_at: string | null
           days_per_dollar: number | null
           duration_days: number
@@ -196,6 +244,7 @@ export type Database = {
         }
         Insert: {
           amount: number
+          application_id?: string | null
           created_at?: string | null
           days_per_dollar?: number | null
           duration_days: number
@@ -208,6 +257,7 @@ export type Database = {
         }
         Update: {
           amount?: number
+          application_id?: string | null
           created_at?: string | null
           days_per_dollar?: number | null
           duration_days?: number
@@ -218,7 +268,15 @@ export type Database = {
           product_identifier?: string | null
           tier_type?: Database["public"]["Enums"]["pricing_tier_type"]
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "pricing_tiers_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -302,9 +360,25 @@ export type Database = {
         Args: { user_uuid: string }
         Returns: Json
       }
+      generate_app_key: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      generate_app_secret: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       is_admin: {
         Args: { check_user_id: string }
         Returns: boolean
+      }
+      validate_app_credentials: {
+        Args: { p_app_key: string; p_app_secret: string }
+        Returns: {
+          application_id: string
+          application_name: string
+          valid: boolean
+        }[]
       }
     }
     Enums: {

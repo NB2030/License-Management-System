@@ -209,6 +209,10 @@ Deno.serve(async (req: Request) => {
     let durationDays = 0;
     let tierUsed = '-';
     let shouldCreateLicense = false;
+    let applicationId: string | null = null;
+    let shouldRenewLicense = false;
+    let licenseRenewed = false;
+    let renewedExpiresAt: string | null = null;
 
     if (data.shop_items && data.shop_items.length > 0) {
       // Shop Order - match by direct_link_code for digital products
@@ -238,6 +242,7 @@ Deno.serve(async (req: Request) => {
           durationDays = Math.floor(amount * productTier.days_per_dollar);
           tierUsed = `${productTier.name} (مرن)`;
           shouldCreateLicense = true;
+          applicationId = productTier.application_id;
           console.log('💰 Flexible pricing applied:');
           console.log('   Amount paid:', amount, data.currency);
           console.log('   Days per dollar:', productTier.days_per_dollar);
@@ -247,8 +252,10 @@ Deno.serve(async (req: Request) => {
           durationDays = productTier.duration_days;
           tierUsed = productTier.name;
           shouldCreateLicense = true;
+          applicationId = productTier.application_id;
         }
         console.log('✓ Product tier matched:', tierUsed, '| Duration:', durationDays, 'days');
+        console.log('   Application ID:', applicationId || 'None (global license)');
       } else {
         console.log('⚠ No matching product tier for code:', productCode);
         console.log('→ License will NOT be created (no tier configured)');
@@ -278,8 +285,12 @@ Deno.serve(async (req: Request) => {
       if (tier) {
         durationDays = tier.duration_days;
         tierUsed = tier.name;
-        shouldCreateLicense = true;
-        console.log('✓ Donation tier matched:', tierUsed, '| Tier amount:', tier.amount, '| Duration:', durationDays, 'days');
+        // For donations: renew existing license instead of creating a new one
+        shouldCreateLicense = false;
+        shouldRenewLicense = true;
+        applicationId = tier.application_id;
+        console.log('✓ Donation tier matched (will renew):', tierUsed, '| Tier amount:', tier.amount, '| Duration:', durationDays, 'days');
+        console.log('   Application ID:', applicationId || 'None (global license)');
       } else {
         console.log('⚠ No matching donation tier for amount:', amount);
         console.log('→ License will NOT be created (no tier configured for this amount)');
@@ -290,6 +301,7 @@ Deno.serve(async (req: Request) => {
     console.log('📊 Final Decision:');
     console.log('   Duration:', durationDays, 'days');
     console.log('   Tier:', tierUsed);
+    console.log('   Application ID:', applicationId || 'None (global license)');
     console.log('   Create License:', shouldCreateLicense ? '✓ YES' : '✗ NO');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
@@ -308,7 +320,8 @@ Deno.serve(async (req: Request) => {
           max_activations: 1,
           current_activations: 0,
           is_active: true,
-          notes: `Ko-fi ${data.type} - ${data.from_name} - ${data.amount} ${data.currency} - ${tierUsed}`,
+          application_id: applicationId,
+          notes: `Ko-fi ${data.type} - ${data.from_name} - ${data.amount} ${data.currency} - ${tierUsed}${applicationId ? ` - App: ${applicationId}` : ''}`,
         })
         .select()
         .single();
@@ -360,8 +373,9 @@ Deno.serve(async (req: Request) => {
       throw orderError;
     }
 
-    // If user exists, activate license automatically
+    // If user exists
     if (profile && newLicense) {
+      // Shop product: activate newly created license
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + durationDays);
 
@@ -391,29 +405,81 @@ Deno.serve(async (req: Request) => {
           .update({ processed: true })
           .eq('message_id', data.message_id);
       }
+    } else if (profile && shouldRenewLicense && durationDays > 0) {
+      // Donation: renew user's most recent active license (any application)
+      const { data: activeUL } = await supabase
+        .from('user_licenses')
+        .select('id, license_id, expires_at, is_active')
+        .eq('user_id', profile.id)
+        .eq('is_active', true)
+        .order('expires_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeUL) {
+        const now = new Date();
+        const currentExpiry = activeUL.expires_at ? new Date(activeUL.expires_at) : now;
+        const base = currentExpiry > now ? currentExpiry : now;
+        const newExpiry = new Date(base);
+        newExpiry.setDate(newExpiry.getDate() + durationDays);
+
+        const { error: renewError } = await supabase
+          .from('user_licenses')
+          .update({ expires_at: newExpiry.toISOString() })
+          .eq('id', activeUL.id);
+
+        if (renewError) {
+          console.error('❌ Error renewing license:', renewError);
+        } else {
+          licenseRenewed = true;
+          renewedExpiresAt = newExpiry.toISOString();
+          console.log('✓ License renewed for user:', profile.email);
+          console.log('   License ID:', activeUL.license_id);
+          console.log('   Previous expiry:', activeUL.expires_at);
+          console.log('   New expiry:', renewedExpiresAt);
+          console.log('   Added days:', durationDays);
+          // Mark order as processed and link to renewed license
+          await supabase
+            .from('kofi_orders')
+            .update({ processed: true, license_id: activeUL.license_id })
+            .eq('message_id', data.message_id);
+        }
+      } else {
+        console.log('⚠ No active license found to renew for user:', profile.email);
+        // Mark order as processed even if no license renewed
+        await supabase
+          .from('kofi_orders')
+          .update({ processed: true })
+          .eq('message_id', data.message_id);
+      }
     } else if (!profile) {
-      console.log('No user found - license (if created) not activated');
+      console.log('No user found - license (if created) not activated or renewed');
     }
 
     console.log('═══════════════════════════════════════');
     console.log('✅ Webhook processed successfully');
-    console.log('   License:', licenseKey || 'None (no matching tier)');
+    console.log('   License:', licenseKey || (licenseRenewed ? 'Renewed existing' : 'None (no matching tier)'));
     console.log('   User found:', !!profile ? 'Yes' : 'No');
     console.log('   Auto-activated:', !!profile && !!newLicense ? 'Yes' : 'No');
+    console.log('   Renewed:', licenseRenewed ? 'Yes' : 'No');
     console.log('═══════════════════════════════════════');
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: shouldCreateLicense 
-          ? 'Payment processed and license created' 
-          : 'Order recorded (no matching pricing tier - license not created)',
+        message: shouldCreateLicense
+          ? 'Payment processed and license created'
+          : (licenseRenewed
+            ? 'Donation processed and license renewed'
+            : 'Order recorded (no matching pricing tier - license not created)'),
         license_key: licenseKey,
         license_created: shouldCreateLicense,
+        license_renewed: licenseRenewed,
+        new_expires_at: renewedExpiresAt,
         user_found: !!profile,
         auto_activated: !!profile && !!newLicense,
         tier: tierUsed,
-        duration_days: shouldCreateLicense ? durationDays : null,
+        duration_days: (shouldCreateLicense || licenseRenewed) ? durationDays : null,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

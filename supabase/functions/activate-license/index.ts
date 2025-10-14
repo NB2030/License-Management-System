@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.74.0';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Info, Apikey, x-app-key, x-app-secret',
 };
 
 Deno.serve(async (req: Request) => {
@@ -19,6 +19,32 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Validate application credentials
+    const appKey = req.headers.get('x-app-key');
+    const appSecret = req.headers.get('x-app-secret');
+
+    if (!appKey || !appSecret) {
+      return new Response(
+        JSON.stringify({ success: false, message: 'Missing application credentials' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: validationResult } = await supabase.rpc('validate_app_credentials', {
+      p_app_key: appKey,
+      p_app_secret: appSecret,
+    });
+
+    if (!validationResult || validationResult.length === 0) {
+      return new Response(
+        JSON.stringify({ success: false, message: 'Invalid application credentials' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const application = validationResult[0];
+
+    // Validate user token
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -46,18 +72,20 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Enforce application match on license lookup
     const { data: license, error: licenseError } = await supabase
       .from('licenses')
       .select('*')
       .eq('license_key', licenseKey)
       .eq('is_active', true)
+      .eq('application_id', application.application_id)
       .maybeSingle();
 
     if (licenseError) throw licenseError;
 
     if (!license) {
       return new Response(
-        JSON.stringify({ success: false, message: 'Invalid or inactive license key' }),
+        JSON.stringify({ success: false, message: 'Invalid license or not for this application' }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

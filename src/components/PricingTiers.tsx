@@ -14,10 +14,17 @@ interface PricingTier {
   created_at: string | null;
   is_flexible_pricing: boolean | null;
   days_per_dollar: number | null;
+  application_id: string | null;
+}
+
+interface Application {
+  id: string;
+  name: string;
 }
 
 export default function PricingTiers() {
   const [tiers, setTiers] = useState<PricingTier[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -29,6 +36,7 @@ export default function PricingTiers() {
     product_identifier: '',
     is_flexible_pricing: false,
     days_per_dollar: 30,
+    application_id: null as string | null,
   });
   const { toast } = useToast();
 
@@ -45,7 +53,25 @@ export default function PricingTiers() {
     }
     
     loadTiers();
+    loadApplications();
   }, []);
+
+  const loadApplications = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('name', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        setApplications(data);
+      }
+    } catch (error) {
+      console.error('Error loading applications:', error);
+    }
+  };
 
   const loadTiers = async () => {
     try {
@@ -94,6 +120,7 @@ export default function PricingTiers() {
         is_active: true,
         is_flexible_pricing: formData.tier_type === 'product' ? formData.is_flexible_pricing : false,
         days_per_dollar: formData.tier_type === 'product' && formData.is_flexible_pricing ? formData.days_per_dollar : 0,
+        application_id: formData.application_id,
       });
 
       if (error) throw error;
@@ -104,7 +131,7 @@ export default function PricingTiers() {
       });
       
       setShowCreateModal(false);
-      setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
+      setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30, application_id: null });
       loadTiers();
     } catch (error) {
       console.error('Error creating tier:', error);
@@ -138,6 +165,7 @@ export default function PricingTiers() {
           product_identifier: formData.tier_type === 'product' ? formData.product_identifier : null,
           is_flexible_pricing: formData.tier_type === 'product' ? formData.is_flexible_pricing : false,
           days_per_dollar: formData.tier_type === 'product' && formData.is_flexible_pricing ? formData.days_per_dollar : 0,
+          application_id: formData.application_id,
         })
         .eq('id', id);
 
@@ -194,12 +222,13 @@ export default function PricingTiers() {
       product_identifier: tier.product_identifier || '',
       is_flexible_pricing: tier.is_flexible_pricing || false,
       days_per_dollar: tier.days_per_dollar || 30,
+      application_id: tier.application_id,
     });
   };
 
   const cancelEdit = () => {
     setEditingId(null);
-    setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
+    setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30, application_id: null });
   };
 
   if (loading) {
@@ -222,7 +251,7 @@ export default function PricingTiers() {
         </div>
         <button
           onClick={() => {
-            setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30 });
+            setFormData({ amount: 0, duration_days: 30, name: '', tier_type: 'donation', product_identifier: '', is_flexible_pricing: false, days_per_dollar: 30, application_id: null });
             setShowCreateModal(true);
           }}
           className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -401,10 +430,13 @@ export default function PricingTiers() {
                           onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                          الحد الأدنى للتبرع لتجديد الترخيص
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          عدد الأيام
+                          عدد الأيام (التجديد)
                         </label>
                         <input
                           type="number"
@@ -412,6 +444,9 @@ export default function PricingTiers() {
                           onChange={(e) => setFormData({ ...formData, duration_days: parseInt(e.target.value) })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
+                        <p className="text-xs text-gray-500 mt-1">
+                          يتم إضافتها للترخيص الحالي للمستخدم
+                        </p>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -615,6 +650,30 @@ export default function PricingTiers() {
                   placeholder="دعم متوسط - شهر واحد"
                 />
               </div>
+
+              {/* Hide application field for donations - they renew existing licenses regardless of app */}
+              {formData.tier_type === 'product' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    التطبيق المرتبط *
+                  </label>
+                  <select
+                    value={formData.application_id || ''}
+                    onChange={(e) => setFormData({ ...formData, application_id: e.target.value || null })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">بدون تطبيق محدد (ترخيص عام)</option>
+                    {applications.map((app) => (
+                      <option key={app.id} value={app.id}>
+                        {app.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    حدد التطبيق الذي سينشأ له الترخيص عند الشراء. إذا لم تحدد، سيكون الترخيص متاحاً لجميع التطبيقات.
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 <button

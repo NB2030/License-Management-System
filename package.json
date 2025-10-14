@@ -7,11 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "build:dev": "vite build --mode development",
-    "lint": "eslint .",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.74.0",
+    "@supabase/supabase-js": "^2.75.0",
     "lovable-tagger": "^1.1.10",
     "lucide-react": "^0.344.0",
     "react": "^18.3.1",

@@ -5,6 +5,7 @@ import { registerSchema, loginSchema } from '../lib/validation';
 import { logError } from '../lib/errors';
 import { LogIn, UserPlus, Key } from 'lucide-react';
 import { z } from 'zod';
+import { APP_CONFIG } from '../config/app';
 
 interface AuthFormProps {
   onAuthSuccess: () => void;
@@ -50,7 +51,11 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         const user = await authService.signUp(email, password, fullName);
 
         if (licenseKey) {
-          const result = await licenseService.activateLicense(licenseKey, user.id);
+          const result = await licenseService.activateLicense(
+            licenseKey, 
+            APP_CONFIG.APP_KEY, 
+            APP_CONFIG.APP_SECRET
+          );
           if (!result.success) {
             setError(result.message);
             return;
@@ -82,14 +87,21 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         }
 
         if (licenseKey) {
-          const result = await licenseService.activateLicense(licenseKey, user.id);
+          const result = await licenseService.activateLicense(
+            licenseKey, 
+            APP_CONFIG.APP_KEY, 
+            APP_CONFIG.APP_SECRET
+          );
           if (!result.success) {
             setError(result.message);
             return;
           }
         }
 
-        const licenseCheck = await licenseService.validateAndSyncLicense(user.id);
+        const licenseCheck = await licenseService.validateAndSyncLicense(
+          APP_CONFIG.APP_KEY,
+          APP_CONFIG.APP_SECRET
+        );
 
         if (!licenseCheck.isValid) {
           setRequiresLicense(true);

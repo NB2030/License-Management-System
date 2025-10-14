@@ -30,6 +30,18 @@ export interface UserLicense {
   last_validated: string | null;
 }
 
+export interface Application {
+  id: string;
+  name: string;
+  description: string | null;
+  app_key: string;
+  app_secret: string;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface UserLicenseWithDetails extends UserLicense {
   profiles?: Profile;
   licenses?: License;

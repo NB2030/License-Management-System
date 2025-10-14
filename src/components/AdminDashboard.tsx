@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
-import { supabase, License, UserLicenseWithDetails } from '../lib/supabase';
-import { Key, Users, Calendar, CheckCircle, XCircle, Plus, Trash2, Search, ChevronLeft, ChevronRight, Edit2, Save, X, RefreshCw } from 'lucide-react';
+import { supabase, License, UserLicenseWithDetails, Application } from '../lib/supabase';
+import { Key, Users, Calendar, CheckCircle, XCircle, Plus, Trash2, Search, ChevronLeft, ChevronRight, Edit2, Save, X, RefreshCw, Monitor } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
+import ApplicationsManagement from './ApplicationsManagement';
 
 export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState<'licenses' | 'users' | 'applications'>('licenses');
   const [licenses, setLicenses] = useState<License[]>([]);
   const [userLicenses, setUserLicenses] = useState<UserLicenseWithDetails[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newLicense, setNewLicense] = useState({
     duration_days: 30,
     max_activations: 1,
     notes: '',
+    application_id: '',
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -48,13 +52,14 @@ export default function AdminDashboard() {
 
   const loadData = async () => {
     try {
-      const [licensesRes, userLicensesRes] = await Promise.all([
-        supabase.from('licenses').select('*').order('created_at', { ascending: false }).limit(50),
+      const [licensesRes, userLicensesRes, applicationsRes] = await Promise.all([
+        supabase.from('licenses').select('*, applications(name)').order('created_at', { ascending: false }).limit(50),
         supabase
           .from('user_licenses')
-          .select('*, profiles(*), licenses(*)')
+          .select('*, profiles(*), licenses(*, applications(name))')
           .order('activated_at', { ascending: false })
           .limit(50),
+        supabase.from('applications').select('*').order('created_at', { ascending: false }),
       ]);
 
       if (licensesRes.data) {
@@ -62,12 +67,14 @@ export default function AdminDashboard() {
         // Cache the data
         const cacheData = { 
           licenses: licensesRes.data, 
-          userLicenses: userLicensesRes.data 
+          userLicenses: userLicensesRes.data,
+          applications: applicationsRes.data 
         };
         sessionStorage.setItem('admin_dashboard_cache', JSON.stringify(cacheData));
         sessionStorage.setItem('admin_dashboard_cache_time', Date.now().toString());
       }
       if (userLicensesRes.data) setUserLicenses(userLicensesRes.data);
+      if (applicationsRes.data) setApplications(applicationsRes.data as Application[]);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -201,6 +208,15 @@ export default function AdminDashboard() {
 
   const createLicense = async () => {
     try {
+      if (!newLicense.application_id) {
+        toast({
+          variant: "destructive",
+          title: "خطأ",
+          description: "يجب تحديد التطبيق"
+        });
+        return;
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
@@ -211,17 +227,27 @@ export default function AdminDashboard() {
         duration_days: newLicense.duration_days,
         max_activations: newLicense.max_activations,
         notes: newLicense.notes,
+        application_id: newLicense.application_id,
         created_by: user.id,
       });
 
       if (error) throw error;
 
+      toast({
+        title: "نجح",
+        description: "تم إنشاء الترخيص بنجاح"
+      });
+
       setShowCreateModal(false);
-      setNewLicense({ duration_days: 30, max_activations: 1, notes: '' });
+      setNewLicense({ duration_days: 30, max_activations: 1, notes: '', application_id: '' });
       loadData();
     } catch (error) {
       console.error('Error creating license:', error);
-      alert('حدث خطأ أثناء إنشاء الترخيص');
+      toast({
+        variant: "destructive",
+        title: "خطأ",
+        description: "حدث خطأ أثناء إنشاء الترخيص"
+      });
     }
   };
 
@@ -412,11 +438,56 @@ export default function AdminDashboard() {
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">لوحة إدارة التراخيص</h1>
-          <p className="mt-2 text-gray-600">إدارة التراخيص والمستخدمين</p>
+          <h1 className="text-3xl font-bold text-gray-900">لوحة إدارة النظام 2.0</h1>
+          <p className="mt-2 text-gray-600">إدارة التطبيقات والتراخيص والمستخدمين</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        {/* Tabs */}
+        <div className="bg-white rounded-xl shadow-sm mb-8">
+          <div className="flex border-b border-gray-200">
+            <button
+              onClick={() => setActiveTab('applications')}
+              className={`flex-1 px-6 py-4 text-center font-semibold transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'applications'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Monitor className="w-5 h-5" />
+              التطبيقات
+            </button>
+            <button
+              onClick={() => setActiveTab('licenses')}
+              className={`flex-1 px-6 py-4 text-center font-semibold transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'licenses'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Key className="w-5 h-5" />
+              التراخيص
+            </button>
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`flex-1 px-6 py-4 text-center font-semibold transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'users'
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <Users className="w-5 h-5" />
+              المستخدمون
+            </button>
+          </div>
+        </div>
+
+        {/* Applications Tab */}
+        {activeTab === 'applications' && <ApplicationsManagement />}
+
+        {/* Licenses Tab */}
+        {activeTab === 'licenses' && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-sm p-6">
             <div className="flex items-center">
               <div className="p-3 bg-blue-100 rounded-lg">
@@ -455,13 +526,13 @@ export default function AdminDashboard() {
                 </p>
               </div>
             </div>
-          </div>
-        </div>
+              </div>
+            </div>
 
-        <div className="bg-white rounded-xl shadow-sm mb-8">
-          <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-            <h2 className="text-xl font-bold text-gray-900">التراخيص</h2>
-            <div className="flex gap-2">
+            <div className="bg-white rounded-xl shadow-sm mb-8">
+              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-xl font-bold text-gray-900">التراخيص</h2>
+                <div className="flex gap-2">
               <button
                 onClick={refreshLicenses}
                 disabled={refreshingLicenses}
@@ -471,58 +542,64 @@ export default function AdminDashboard() {
                 <RefreshCw className={`w-5 h-5 ${refreshingLicenses ? 'animate-spin' : ''}`} />
                 تحديث
               </button>
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-                إنشاء ترخيص جديد
-              </button>
-            </div>
-          </div>
+                  <button
+                    onClick={() => setShowCreateModal(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-5 h-5" />
+                    إنشاء ترخيص جديد
+                  </button>
+                </div>
+              </div>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    مفتاح الترخيص
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    المدة (أيام)
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    التفعيلات
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    الحالة
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ملاحظات
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    إجراءات
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {licenses.map((license) => (
-                  <tr key={license.id} className="hover:bg-gray-50">
-                    {editingLicenseId === license.id ? (
-                      <>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <code className="px-2 py-1 bg-gray-100 rounded text-sm font-mono">
-                            {license.license_key}
-                          </code>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <input
-                            type="number"
-                            value={editFormData.duration_days}
-                            onChange={(e) => setEditFormData({ ...editFormData, duration_days: parseInt(e.target.value) })}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
-                          />
-                        </td>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        مفتاح الترخيص
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        التطبيق
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        المدة (أيام)
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        التفعيلات
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        الحالة
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        ملاحظات
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        إجراءات
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {licenses.map((license) => (
+                      <tr key={license.id} className="hover:bg-gray-50">
+                        {editingLicenseId === license.id ? (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <code className="px-2 py-1 bg-gray-100 rounded text-sm font-mono">
+                                {license.license_key}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              {(license as any).applications?.name || 'غير محدد'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <input
+                                type="number"
+                                value={editFormData.duration_days}
+                                onChange={(e) => setEditFormData({ ...editFormData, duration_days: parseInt(e.target.value) })}
+                                className="w-20 px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                            </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <input
                             type="number"
@@ -570,16 +647,21 @@ export default function AdminDashboard() {
                           </div>
                         </td>
                       </>
-                    ) : (
-                      <>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <code className="px-2 py-1 bg-gray-100 rounded text-sm font-mono">
-                            {license.license_key}
-                          </code>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {license.duration_days}
-                        </td>
+                        ) : (
+                          <>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <code className="px-2 py-1 bg-gray-100 rounded text-sm font-mono">
+                                {license.license_key}
+                              </code>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                              <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-md font-medium">
+                                {(license as any).applications?.name || 'غير محدد'}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                              {license.duration_days}
+                            </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                           {license.current_activations} / {license.max_activations}
                         </td>
@@ -596,298 +678,306 @@ export default function AdminDashboard() {
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">{license.notes || '-'}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => startEditLicense(license)}
-                              className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                              title="تحرير"
-                            >
-                              <Edit2 className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => deleteLicense(license.id)}
-                              className="p-1 text-red-600 hover:bg-red-50 rounded"
-                              title="حذف"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <h2 className="text-xl font-bold text-gray-900">المستخدمون والتراخيص</h2>
-              
-              <div className="flex gap-2 w-full sm:w-auto">
-                {/* Refresh Button */}
-                <button
-                  onClick={refreshUserLicenses}
-                  disabled={refreshingUserLicenses}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
-                  title="تحديث القائمة"
-                >
-                  <RefreshCw className={`w-5 h-5 ${refreshingUserLicenses ? 'animate-spin' : ''}`} />
-                  تحديث
-                </button>
-                
-                {/* Search Input */}
-                <div className="relative flex-1 sm:w-96">
-                  <Search className="absolute right-3 top-3 w-5 h-5 text-gray-400" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="البحث بالاسم أو البريد أو مفتاح الترخيص..."
-                    className="w-full pr-10 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    المستخدم
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    البريد الإلكتروني
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    مفتاح الترخيص
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    تاريخ التفعيل
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    تاريخ الانتهاء
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    الأيام المتبقية
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    الحالة
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    إجراءات
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {paginatedUserLicenses.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                      {searchQuery ? 'لا توجد نتائج للبحث' : 'لا توجد تراخيص مفعلة بعد'}
-                    </td>
-                  </tr>
-                ) : (
-                  paginatedUserLicenses.map((userLicense) => (
-                    <tr key={userLicense.id} className="hover:bg-gray-50">
-                      {editingUserLicenseId === userLicense.id ? (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {userLicense.profiles?.full_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {userLicense.profiles?.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
-                              {userLicense.licenses?.license_key}
-                            </code>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {userLicense.activated_at ? formatDate(userLicense.activated_at) : '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <input
-                              type="date"
-                              value={editFormData.expires_at}
-                              onChange={(e) => setEditFormData({ ...editFormData, expires_at: e.target.value })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
-                            />
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {(() => {
-                              const daysLeft = calculateDaysRemaining(userLicense.expires_at);
-                              if (daysLeft < 0) {
-                                return <span className="text-red-600 font-semibold">منتهي</span>;
-                              } else if (daysLeft === 0) {
-                                return <span className="text-orange-600 font-semibold">ينتهي اليوم</span>;
-                              } else if (daysLeft <= 7) {
-                                return <span className="text-orange-600 font-semibold">{daysLeft} يوم</span>;
-                              } else if (daysLeft <= 30) {
-                                return <span className="text-yellow-600 font-semibold">{daysLeft} يوم</span>;
-                              } else {
-                                return <span className="text-green-600 font-semibold">{daysLeft} يوم</span>;
-                              }
-                            })()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <select
-                              value={editFormData.is_active ? 'true' : 'false'}
-                              onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.value === 'true' })}
-                              className="px-2 py-1 border border-gray-300 rounded text-sm"
-                            >
-                              <option value="true">مفعل</option>
-                              <option value="false">معطل</option>
-                            </select>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => saveUserLicense(userLicense.id)}
-                                className="p-1 text-green-600 hover:bg-green-50 rounded"
-                                title="حفظ"
-                              >
-                                <Save className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={cancelEditUserLicense}
-                                className="p-1 text-gray-600 hover:bg-gray-50 rounded"
-                                title="إلغاء"
-                              >
-                                <X className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            {userLicense.profiles?.full_name}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {userLicense.profiles?.email}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
-                              {userLicense.licenses?.license_key}
-                            </code>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {userLicense.activated_at ? formatDate(userLicense.activated_at) : '-'}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                            {formatDate(userLicense.expires_at)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {(() => {
-                              const daysLeft = calculateDaysRemaining(userLicense.expires_at);
-                              if (daysLeft < 0) {
-                                return <span className="text-red-600 font-semibold">منتهي</span>;
-                              } else if (daysLeft === 0) {
-                                return <span className="text-orange-600 font-semibold">ينتهي اليوم</span>;
-                              } else if (daysLeft <= 7) {
-                                return <span className="text-orange-600 font-semibold">{daysLeft} يوم</span>;
-                              } else if (daysLeft <= 30) {
-                                return <span className="text-yellow-600 font-semibold">{daysLeft} يوم</span>;
-                              } else {
-                                return <span className="text-green-600 font-semibold">{daysLeft} يوم</span>;
-                              }
-                            })()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            {userLicense.is_active &&
-                            new Date(userLicense.expires_at) > new Date() ? (
-                              <span className="flex items-center gap-1 text-green-600">
-                                <CheckCircle className="w-4 h-4" />
-                                مفعل
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-red-600">
-                                <XCircle className="w-4 h-4" />
-                                منتهي
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => startEditUserLicense(userLicense)}
-                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                                title="تحرير"
-                              >
-                                <Edit2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => deleteUserAccount(userLicense.user_id)}
-                                className="p-1 text-red-600 hover:bg-red-50 rounded"
-                                title="حذف الحساب"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
-                            </div>
-                          </td>
-                        </>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-600">
-                  عرض {((currentPage - 1) * itemsPerPage) + 1} إلى {Math.min(currentPage * itemsPerPage, filteredUserLicenses.length)} من أصل {filteredUserLicenses.length}
-                </div>
-                
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCurrentPage(currentPage - 1)}
-                    disabled={currentPage === 1}
-                    className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                    السابق
-                  </button>
-                  
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                      <button
-                        key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`px-3 py-2 rounded-lg transition-colors ${
-                          currentPage === page
-                            ? 'bg-blue-600 text-white'
-                            : 'border border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {page}
-                      </button>
+                            <td className="px-6 py-4 text-sm text-gray-500">{license.notes || '-'}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm">
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => startEditLicense(license)}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                  title="تحرير"
+                                >
+                                  <Edit2 className="w-5 h-5" />
+                                </button>
+                                <button
+                                  onClick={() => deleteLicense(license.id)}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                  title="حذف"
+                                >
+                                  <Trash2 className="w-5 h-5" />
+                                </button>
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
                     ))}
-                  </div>
-                  
-                  <button
-                    onClick={() => setCurrentPage(currentPage + 1)}
-                    disabled={currentPage === totalPages}
-                    className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    التالي
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                </div>
+                  </tbody>
+                </table>
               </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
+
+        {/* Users Tab */}
+        {activeTab === 'users' && (
+          <>
+
+            <div className="bg-white rounded-xl shadow-sm">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <h2 className="text-xl font-bold text-gray-900">المستخدمون والتراخيص</h2>
+                  
+                  <div className="flex gap-2 w-full sm:w-auto">
+                    {/* Refresh Button */}
+                    <button
+                      onClick={refreshUserLicenses}
+                      disabled={refreshingUserLicenses}
+                      className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                      title="تحديث القائمة"
+                    >
+                      <RefreshCw className={`w-5 h-5 ${refreshingUserLicenses ? 'animate-spin' : ''}`} />
+                      تحديث
+                    </button>
+                    
+                    {/* Search Input */}
+                    <div className="relative flex-1 sm:w-96">
+                      <Search className="absolute right-3 top-3 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="البحث بالاسم أو البريد أو مفتاح الترخيص..."
+                        className="w-full pr-10 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        المستخدم
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        البريد الإلكتروني
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        مفتاح الترخيص
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        تاريخ التفعيل
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        تاريخ الانتهاء
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        الأيام المتبقية
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        الحالة
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        إجراءات
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {paginatedUserLicenses.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                          {searchQuery ? 'لا توجد نتائج للبحث' : 'لا توجد تراخيص مفعلة بعد'}
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedUserLicenses.map((userLicense) => (
+                        <tr key={userLicense.id} className="hover:bg-gray-50">
+                          {editingUserLicenseId === userLicense.id ? (
+                            <>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {userLicense.profiles?.full_name}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {userLicense.profiles?.email}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                                  {userLicense.licenses?.license_key}
+                                </code>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {userLicense.activated_at ? formatDate(userLicense.activated_at) : '-'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <input
+                                  type="date"
+                                  value={editFormData.expires_at}
+                                  onChange={(e) => setEditFormData({ ...editFormData, expires_at: e.target.value })}
+                                  className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                />
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {(() => {
+                                  const daysLeft = calculateDaysRemaining(userLicense.expires_at);
+                                  if (daysLeft < 0) {
+                                    return <span className="text-red-600 font-semibold">منتهي</span>;
+                                  } else if (daysLeft === 0) {
+                                    return <span className="text-orange-600 font-semibold">ينتهي اليوم</span>;
+                                  } else if (daysLeft <= 7) {
+                                    return <span className="text-orange-600 font-semibold">{daysLeft} يوم</span>;
+                                  } else if (daysLeft <= 30) {
+                                    return <span className="text-yellow-600 font-semibold">{daysLeft} يوم</span>;
+                                  } else {
+                                    return <span className="text-green-600 font-semibold">{daysLeft} يوم</span>;
+                                  }
+                                })()}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <select
+                                  value={editFormData.is_active ? 'true' : 'false'}
+                                  onChange={(e) => setEditFormData({ ...editFormData, is_active: e.target.value === 'true' })}
+                                  className="px-2 py-1 border border-gray-300 rounded text-sm"
+                                >
+                                  <option value="true">مفعل</option>
+                                  <option value="false">معطل</option>
+                                </select>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => saveUserLicense(userLicense.id)}
+                                    className="p-1 text-green-600 hover:bg-green-50 rounded"
+                                    title="حفظ"
+                                  >
+                                    <Save className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={cancelEditUserLicense}
+                                    className="p-1 text-gray-600 hover:bg-gray-50 rounded"
+                                    title="إلغاء"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                {userLicense.profiles?.full_name}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {userLicense.profiles?.email}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <code className="px-2 py-1 bg-gray-100 rounded text-xs font-mono">
+                                  {userLicense.licenses?.license_key}
+                                </code>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {userLicense.activated_at ? formatDate(userLicense.activated_at) : '-'}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                                {formatDate(userLicense.expires_at)}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                {(() => {
+                                  const daysLeft = calculateDaysRemaining(userLicense.expires_at);
+                                  if (daysLeft < 0) {
+                                    return <span className="text-red-600 font-semibold">منتهي</span>;
+                                  } else if (daysLeft === 0) {
+                                    return <span className="text-orange-600 font-semibold">ينتهي اليوم</span>;
+                                  } else if (daysLeft <= 7) {
+                                    return <span className="text-orange-600 font-semibold">{daysLeft} يوم</span>;
+                                  } else if (daysLeft <= 30) {
+                                    return <span className="text-yellow-600 font-semibold">{daysLeft} يوم</span>;
+                                  } else {
+                                    return <span className="text-green-600 font-semibold">{daysLeft} يوم</span>;
+                                  }
+                                })()}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                {userLicense.is_active &&
+                                new Date(userLicense.expires_at) > new Date() ? (
+                                  <span className="flex items-center gap-1 text-green-600">
+                                    <CheckCircle className="w-4 h-4" />
+                                    مفعل
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-red-600">
+                                    <XCircle className="w-4 h-4" />
+                                    منتهي
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => startEditUserLicense(userLicense)}
+                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                                    title="تحرير"
+                                  >
+                                    <Edit2 className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => userLicense.profiles && deleteUserAccount(userLicense.profiles.id)}
+                                    className="p-1 text-red-600 hover:bg-red-50 rounded"
+                                    title="حذف الحساب"
+                                  >
+                                    <Trash2 className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="px-6 py-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      عرض {((currentPage - 1) * itemsPerPage) + 1} إلى {Math.min(currentPage * itemsPerPage, filteredUserLicenses.length)} من أصل {filteredUserLicenses.length}
+                    </div>
+                    
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setCurrentPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                        السابق
+                      </button>
+                      
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                          <button
+                            key={page}
+                            onClick={() => setCurrentPage(page)}
+                            className={`px-3 py-2 rounded-lg transition-colors ${
+                              currentPage === page
+                                ? 'bg-blue-600 text-white'
+                                : 'border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={() => setCurrentPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        التالي
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {showCreateModal && (
@@ -896,6 +986,25 @@ export default function AdminDashboard() {
             <h3 className="text-xl font-bold text-gray-900 mb-4">إنشاء ترخيص جديد</h3>
 
             <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  التطبيق *
+                </label>
+                <select
+                  value={newLicense.application_id}
+                  onChange={(e) => setNewLicense({ ...newLicense, application_id: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">اختر التطبيق</option>
+                  {applications.map((app) => (
+                    <option key={app.id} value={app.id}>
+                      {app.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   المدة (بالأيام)

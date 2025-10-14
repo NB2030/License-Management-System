@@ -13,114 +13,80 @@ export interface OfflineLicenseData {
 }
 
 export const licenseService = {
-  async activateLicense(licenseKey: string, userId: string): Promise<{ success: boolean; message: string; expiresAt?: string }> {
+  async activateLicense(licenseKey: string, appKey: string, appSecret: string): Promise<{ success: boolean; message: string; expiresAt?: string }> {
     try {
-      const { data: license, error: licenseError } = await supabase
-        .from('licenses')
-        .select('*')
-        .eq('license_key', licenseKey)
-        .eq('is_active', true)
-        .maybeSingle();
-
-      if (licenseError) throw licenseError;
-      if (!license) {
-        return { success: false, message: 'رمز الترخيص غير صالح أو غير نشط' };
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return { success: false, message: 'يجب تسجيل الدخول أولاً' };
       }
 
-      if (license.current_activations >= license.max_activations) {
-        return { success: false, message: 'تم الوصول للحد الأقصى من التفعيلات لهذا الترخيص' };
+      const response = await supabase.functions.invoke('activate-license', {
+        body: { licenseKey },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'x-app-key': appKey,
+          'x-app-secret': appSecret,
+        },
+      });
+
+      if (response.error) {
+        return { success: false, message: response.error.message || 'حدث خطأ في تفعيل الترخيص' };
       }
 
-      const { data: existingLicense } = await supabase
-        .from('user_licenses')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('license_id', license.id)
-        .maybeSingle();
+      const data = response.data;
 
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + license.duration_days);
-
-      if (existingLicense) {
-        const { error: updateError } = await supabase
-          .from('user_licenses')
-          .update({
-            is_active: true,
-            expires_at: expiresAt.toISOString(),
-            last_validated: new Date().toISOString(),
-          })
-          .eq('id', existingLicense.id);
-
-        if (updateError) throw updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('user_licenses')
-          .insert({
-            user_id: userId,
-            license_id: license.id,
-            expires_at: expiresAt.toISOString(),
-            is_active: true,
-          });
-
-        if (insertError) throw insertError;
-
-        const { error: updateCountError } = await supabase
-          .from('licenses')
-          .update({
-            current_activations: license.current_activations + 1,
-          })
-          .eq('id', license.id);
-
-        if (updateCountError) throw updateCountError;
+      if (!data.success) {
+        return { success: false, message: data.message || 'فشل تفعيل الترخيص' };
       }
 
       return {
         success: true,
-        message: 'تم تفعيل الترخيص بنجاح',
-        expiresAt: expiresAt.toISOString(),
+        message: data.message || 'تم تفعيل الترخيص بنجاح',
+        expiresAt: data.expiresAt,
       };
-  } catch (error) {
-    logError('License activation', error);
-    return { success: false, message: mapErrorToUserMessage(error) };
-  }
+    } catch (error) {
+      logError('License activation', error);
+      return { success: false, message: mapErrorToUserMessage(error) };
+    }
   },
 
-  async checkUserLicense(userId: string): Promise<{ isValid: boolean; expiresAt?: string }> {
+  async validateLicense(appKey: string, appSecret: string): Promise<{ isValid: boolean; expiresAt?: string; daysRemaining?: number; error?: string }> {
     try {
-      const { data, error } = await supabase
-        .from('user_licenses')
-        .select('*, licenses(*)')
-        .eq('user_id', userId)
-        .eq('is_active', true)
-        .order('expires_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
-      if (!data) return { isValid: false };
-
-      const now = new Date();
-      const expiresAt = new Date(data.expires_at);
-
-      if (expiresAt < now) {
-        await supabase
-          .from('user_licenses')
-          .update({ is_active: false })
-          .eq('id', data.id);
-
-        return { isValid: false };
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        return { isValid: false, error: 'يجب تسجيل الدخول أولاً' };
       }
 
-      await supabase
-        .from('user_licenses')
-        .update({ last_validated: new Date().toISOString() })
-        .eq('id', data.id);
+      const response = await supabase.functions.invoke('validate-license-v2', {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'x-app-key': appKey,
+          'x-app-secret': appSecret,
+        },
+      });
 
-      return { isValid: true, expiresAt: data.expires_at };
-  } catch (error) {
-    logError('License check', error);
-    return { isValid: false };
-  }
+      if (response.error) {
+        return { isValid: false, error: response.error.message };
+      }
+
+      const data = response.data;
+
+      if (!data.isValid) {
+        return { 
+          isValid: false, 
+          error: data.message || data.error || 'الترخيص غير صالح' 
+        };
+      }
+
+      return {
+        isValid: true,
+        expiresAt: data.expiresAt,
+        daysRemaining: data.daysRemaining,
+      };
+    } catch (error) {
+      logError('License validation', error);
+      return { isValid: false, error: mapErrorToUserMessage(error) };
+    }
   },
 
   saveOfflineLicense(data: OfflineLicenseData) {
@@ -152,23 +118,27 @@ export const licenseService = {
     localStorage.removeItem(OFFLINE_LICENSE_KEY);
   },
 
-  async validateAndSyncLicense(userId: string): Promise<{ isValid: boolean; isOffline: boolean }> {
+  async validateAndSyncLicense(appKey: string, appSecret: string): Promise<{ isValid: boolean; isOffline: boolean; expiresAt?: string; daysRemaining?: number }> {
     try {
-      const onlineCheck = await this.checkUserLicense(userId);
+      const onlineCheck = await this.validateLicense(appKey, appSecret);
 
       if (onlineCheck.isValid && onlineCheck.expiresAt) {
         const { data: user } = await supabase.auth.getUser();
+        if (!user.user) {
+          return { isValid: false, isOffline: false };
+        }
+        
         const { data: profile } = await supabase
           .from('profiles')
           .select('*')
-          .eq('id', userId)
+          .eq('id', user.user.id)
           .maybeSingle();
 
         if (user.user && profile) {
           const { data: userLicense } = await supabase
             .from('user_licenses')
             .select('*, licenses(*)')
-            .eq('user_id', userId)
+            .eq('user_id', user.user.id)
             .eq('is_active', true)
             .order('expires_at', { ascending: false })
             .limit(1)
@@ -186,7 +156,12 @@ export const licenseService = {
           }
         }
 
-        return { isValid: true, isOffline: false };
+        return { 
+          isValid: true, 
+          isOffline: false,
+          expiresAt: onlineCheck.expiresAt,
+          daysRemaining: onlineCheck.daysRemaining,
+        };
       }
 
       return { isValid: false, isOffline: false };
